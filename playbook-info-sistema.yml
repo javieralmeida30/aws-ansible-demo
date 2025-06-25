@@ -1,0 +1,51 @@
+---
+- name: "Recopilar información del sistema"
+  hosts: localhost
+  gather_facts: yes
+  connection: local
+  
+  tasks:
+    - name: "Mostrar información del sistema operativo"
+      debug:
+        msg: |
+          🖥️ Sistema: {{ ansible_distribution }} {{ ansible_distribution_version }}
+          💾 Memoria total: {{ (ansible_memtotal_mb / 1024) | round(1) }} GB
+          🔧 Procesador: {{ ansible_processor[2] }}
+          🏠 Usuario actual: {{ ansible_user_id }}
+          📅 Fecha: {{ ansible_date_time.date }}
+          ⏰ Hora: {{ ansible_date_time.time }}
+
+    - name: "Verificar espacio en disco"
+      shell: df -h /
+      register: espacio_disco
+      
+    - name: "Mostrar espacio en disco"
+      debug:
+        msg: "💽 Espacio en disco: {{ espacio_disco.stdout_lines[1] }}"
+
+    - name: "Crear archivo de reporte"
+      copy:
+        content: |
+          REPORTE DEL SISTEMA - {{ ansible_date_time.date }} {{ ansible_date_time.time }}
+          ============================================================
+          
+          Sistema Operativo: {{ ansible_distribution }} {{ ansible_distribution_version }}
+          Arquitectura: {{ ansible_architecture }}
+          Memoria Total: {{ (ansible_memtotal_mb / 1024) | round(1) }} GB
+          Procesador: {{ ansible_processor[2] }}
+          Usuario: {{ ansible_user_id }}
+          Hostname: {{ ansible_hostname }}
+          
+          Espacio en Disco:
+          {{ espacio_disco.stdout }}
+          
+          Interfaces de Red:
+          {% for interface in ansible_interfaces %}
+          - {{ interface }}: {{ ansible_default_ipv4.address if interface == ansible_default_ipv4.interface else 'No configurada' }}
+          {% endfor %}
+          
+        dest: "./reporte-sistema-{{ ansible_date_time.date }}.txt"
+        
+    - name: "Confirmar creación del reporte"
+      debug:
+        msg: "✅ Reporte guardado en: reporte-sistema-{{ ansible_date_time.date }}.txt" 
