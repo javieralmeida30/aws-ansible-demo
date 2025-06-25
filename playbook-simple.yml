@@ -1,0 +1,52 @@
+---
+- name: "Información básica del sistema"
+  hosts: localhost
+  gather_facts: yes
+  connection: local
+  
+  tasks:
+    - name: "Mostrar información del sistema"
+      debug:
+        msg: |
+          🖥️ Sistema: {{ ansible_distribution | default('Unknown') }} {{ ansible_distribution_version | default('') }}
+          💾 Memoria total: {{ (ansible_memtotal_mb | default(0) / 1024) | round(1) }} GB
+          🔧 Procesador: {{ ansible_processor_cores | default('Unknown') }} cores
+          🏠 Usuario actual: {{ ansible_user_id | default('Unknown') }}
+          📅 Fecha: {{ ansible_date_time.date }}
+          ⏰ Hora: {{ ansible_date_time.time }}
+          🌐 Hostname: {{ ansible_hostname | default('Unknown') }}
+
+    - name: "Verificar espacio en disco"
+      shell: df -h /
+      register: espacio_disco
+      
+    - name: "Mostrar espacio en disco"
+      debug:
+        msg: "💽 Espacio en disco: {{ espacio_disco.stdout_lines[1] }}"
+
+    - name: "Mostrar variables disponibles (debug)"
+      debug:
+        msg: "🔍 Ejecutándose en: {{ ansible_distribution | default('Container') }}"
+
+    - name: "Crear archivo de reporte simple"
+      copy:
+        content: |
+          REPORTE DEL SISTEMA - {{ ansible_date_time.date }} {{ ansible_date_time.time }}
+          ============================================================
+          
+          Sistema: {{ ansible_distribution | default('Unknown') }} {{ ansible_distribution_version | default('') }}
+          Memoria: {{ (ansible_memtotal_mb | default(0) / 1024) | round(1) }} GB
+          Procesador: {{ ansible_processor_cores | default('Unknown') }} cores
+          Usuario: {{ ansible_user_id | default('Unknown') }}
+          Hostname: {{ ansible_hostname | default('Unknown') }}
+          
+          Espacio en Disco:
+          {{ espacio_disco.stdout }}
+          
+          Estado: ✅ Playbook ejecutado correctamente desde AWX
+          
+        dest: "/tmp/reporte-awx-{{ ansible_date_time.date }}.txt"
+        
+    - name: "Confirmar éxito"
+      debug:
+        msg: "🎉 ¡Playbook ejecutado exitosamente! Reporte guardado en /tmp/reporte-awx-{{ ansible_date_time.date }}.txt" 
