@@ -1,0 +1,402 @@
+---
+- name: "🔍 OpenSearch Stack para Monitoreo AWX"
+  hosts: localhost
+  gather_facts: yes
+  vars:
+    namespace: "logging"
+    opensearch_version: "2.11.1"
+    fluent_version: "2.2.0"
+    
+  tasks:
+    - name: "📋 Información del despliegue"
+      debug:
+        msg:
+          - "================================"
+          - "🔍 OPENSEARCH STACK DEPLOYMENT"
+          - "================================"
+          - "Namespace: {{ namespace }}"
+          - "OpenSearch: {{ opensearch_version }}"
+          - "Fluent Bit: {{ fluent_version }}"
+          - "Propósito: Monitorear AWX"
+          - "================================"
+
+    - name: "🏗️ Crear namespace logging"
+      kubernetes.core.k8s:
+        name: "{{ namespace }}"
+        api_version: v1
+        kind: Namespace
+        state: present
+
+    - name: "🔐 Crear ConfigMap para OpenSearch"
+      kubernetes.core.k8s:
+        definition:
+          apiVersion: v1
+          kind: ConfigMap
+          metadata:
+            name: opensearch-config
+            namespace: "{{ namespace }}"
+          data:
+            opensearch.yml: |
+              cluster.name: opensearch-cluster
+              node.name: opensearch-node1
+              discovery.type: single-node
+              http.port: 9200
+              transport.port: 9300
+              
+              # Seguridad básica
+              plugins.security.disabled: true
+              
+              # Configuración de red
+              network.host: 0.0.0.0
+              
+              # Configuración de memoria
+              bootstrap.memory_lock: false
+
+    - name: "🗄️ Desplegar OpenSearch"
+      kubernetes.core.k8s:
+        definition:
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: opensearch
+            namespace: "{{ namespace }}"
+            labels:
+              app: opensearch
+          spec:
+            replicas: 1
+            selector:
+              matchLabels:
+                app: opensearch
+            template:
+              metadata:
+                labels:
+                  app: opensearch
+              spec:
+                containers:
+                - name: opensearch
+                  image: "opensearchproject/opensearch:{{ opensearch_version }}"
+                  ports:
+                  - containerPort: 9200
+                    name: http
+                  - containerPort: 9300
+                    name: transport
+                  env:
+                  - name: discovery.type
+                    value: single-node
+                  - name: OPENSEARCH_JAVA_OPTS
+                    value: "-Xms512m -Xmx512m"
+                  - name: DISABLE_SECURITY_PLUGIN
+                    value: "true"
+                  volumeMounts:
+                  - name: config
+                    mountPath: /usr/share/opensearch/config/opensearch.yml
+                    subPath: opensearch.yml
+                  resources:
+                    requests:
+                      memory: "1Gi"
+                      cpu: "500m"
+                    limits:
+                      memory: "2Gi"
+                      cpu: "1000m"
+                volumes:
+                - name: config
+                  configMap:
+                    name: opensearch-config
+
+    - name: "🌐 Crear Service para OpenSearch"
+      kubernetes.core.k8s:
+        definition:
+          apiVersion: v1
+          kind: Service
+          metadata:
+            name: opensearch-service
+            namespace: "{{ namespace }}"
+            labels:
+              app: opensearch
+          spec:
+            selector:
+              app: opensearch
+            ports:
+            - name: http
+              port: 9200
+              targetPort: 9200
+            - name: transport
+              port: 9300
+              targetPort: 9300
+            type: ClusterIP
+
+    - name: "📊 Desplegar OpenSearch Dashboards"
+      kubernetes.core.k8s:
+        definition:
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: opensearch-dashboards
+            namespace: "{{ namespace }}"
+            labels:
+              app: opensearch-dashboards
+          spec:
+            replicas: 1
+            selector:
+              matchLabels:
+                app: opensearch-dashboards
+            template:
+              metadata:
+                labels:
+                  app: opensearch-dashboards
+              spec:
+                containers:
+                - name: opensearch-dashboards
+                  image: "opensearchproject/opensearch-dashboards:{{ opensearch_version }}"
+                  ports:
+                  - containerPort: 5601
+                    name: http
+                  env:
+                  - name: OPENSEARCH_HOSTS
+                    value: "http://opensearch-service:9200"
+                  - name: DISABLE_SECURITY_DASHBOARDS_PLUGIN
+                    value: "true"
+                  resources:
+                    requests:
+                      memory: "512Mi"
+                      cpu: "250m"
+                    limits:
+                      memory: "1Gi"
+                      cpu: "500m"
+
+    - name: "🌐 Crear Service para OpenSearch Dashboards"
+      kubernetes.core.k8s:
+        definition:
+          apiVersion: v1
+          kind: Service
+          metadata:
+            name: opensearch-dashboards-service
+            namespace: "{{ namespace }}"
+            labels:
+              app: opensearch-dashboards
+          spec:
+            selector:
+              app: opensearch-dashboards
+            ports:
+            - name: http
+              port: 5601
+              targetPort: 5601
+            type: ClusterIP
+
+    - name: "🚰 Crear ConfigMap para Fluent Bit"
+      kubernetes.core.k8s:
+        definition:
+          apiVersion: v1
+          kind: ConfigMap
+          metadata:
+            name: fluent-bit-config
+            namespace: "{{ namespace }}"
+          data:
+            fluent-bit.conf: |
+              [SERVICE]
+                  Flush         5
+                  Log_Level     info
+                  Daemon        off
+                  Parsers_File  parsers.conf
+                  HTTP_Server   On
+                  HTTP_Listen   0.0.0.0
+                  HTTP_Port     2020
+
+              [INPUT]
+                  Name              tail
+                  Path              /var/log/containers/*awx*.log
+                  Parser            docker
+                  Tag               awx.*
+                  Refresh_Interval  5
+                  Mem_Buf_Limit     50MB
+                  Skip_Long_Lines   On
+
+              [INPUT]
+                  Name              tail
+                  Path              /var/log/containers/*task*.log
+                  Parser            docker
+                  Tag               awx.task.*
+                  Refresh_Interval  5
+                  Mem_Buf_Limit     50MB
+                  Skip_Long_Lines   On
+
+              [FILTER]
+                  Name                kubernetes
+                  Match               awx.*
+                  Kube_URL            https://kubernetes.default.svc:443
+                  Kube_CA_File        /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+                  Kube_Token_File     /var/run/secrets/kubernetes.io/serviceaccount/token
+                  Merge_Log           On
+                  K8S-Logging.Parser  On
+                  K8S-Logging.Exclude Off
+
+              [OUTPUT]
+                  Name            es
+                  Match           awx.*
+                  Host            opensearch-service
+                  Port            9200
+                  Index           awx-logs
+                  Type            _doc
+                  Logstash_Format On
+                  Logstash_Prefix awx-logs
+                  Replace_Dots    On
+                  Retry_Limit     False
+                  Suppress_Type_Name On
+
+            parsers.conf: |
+              [PARSER]
+                  Name        docker
+                  Format      json
+                  Time_Key    time
+                  Time_Format %Y-%m-%dT%H:%M:%S.%L
+                  Time_Keep   On
+
+    - name: "🚰 Desplegar Fluent Bit DaemonSet"
+      kubernetes.core.k8s:
+        definition:
+          apiVersion: apps/v1
+          kind: DaemonSet
+          metadata:
+            name: fluent-bit
+            namespace: "{{ namespace }}"
+            labels:
+              app: fluent-bit
+          spec:
+            selector:
+              matchLabels:
+                app: fluent-bit
+            template:
+              metadata:
+                labels:
+                  app: fluent-bit
+              spec:
+                serviceAccountName: fluent-bit
+                containers:
+                - name: fluent-bit
+                  image: "fluent/fluent-bit:{{ fluent_version }}"
+                  ports:
+                  - containerPort: 2020
+                    name: http
+                  volumeMounts:
+                  - name: config
+                    mountPath: /fluent-bit/etc/
+                  - name: varlog
+                    mountPath: /var/log
+                    readOnly: true
+                  - name: varlibdockercontainers
+                    mountPath: /var/lib/docker/containers
+                    readOnly: true
+                  resources:
+                    requests:
+                      memory: "100Mi"
+                      cpu: "100m"
+                    limits:
+                      memory: "200Mi"
+                      cpu: "200m"
+                volumes:
+                - name: config
+                  configMap:
+                    name: fluent-bit-config
+                - name: varlog
+                  hostPath:
+                    path: /var/log
+                - name: varlibdockercontainers
+                  hostPath:
+                    path: /var/lib/docker/containers
+
+    - name: "🔐 Crear ServiceAccount para Fluent Bit"
+      kubernetes.core.k8s:
+        definition:
+          apiVersion: v1
+          kind: ServiceAccount
+          metadata:
+            name: fluent-bit
+            namespace: "{{ namespace }}"
+
+    - name: "🔐 Crear ClusterRole para Fluent Bit"
+      kubernetes.core.k8s:
+        definition:
+          apiVersion: rbac.authorization.k8s.io/v1
+          kind: ClusterRole
+          metadata:
+            name: fluent-bit
+          rules:
+          - apiGroups: [""]
+            resources: ["pods", "namespaces"]
+            verbs: ["get", "list", "watch"]
+
+    - name: "🔐 Crear ClusterRoleBinding para Fluent Bit"
+      kubernetes.core.k8s:
+        definition:
+          apiVersion: rbac.authorization.k8s.io/v1
+          kind: ClusterRoleBinding
+          metadata:
+            name: fluent-bit
+          roleRef:
+            apiGroup: rbac.authorization.k8s.io
+            kind: ClusterRole
+            name: fluent-bit
+          subjects:
+          - kind: ServiceAccount
+            name: fluent-bit
+            namespace: "{{ namespace }}"
+
+    - name: "⏳ Esperar que OpenSearch esté listo"
+      kubernetes.core.k8s_info:
+        api_version: apps/v1
+        kind: Deployment
+        name: opensearch
+        namespace: "{{ namespace }}"
+        wait_condition:
+          type: Available
+          status: "True"
+        wait_timeout: 300
+
+    - name: "⏳ Esperar que OpenSearch Dashboards esté listo"
+      kubernetes.core.k8s_info:
+        api_version: apps/v1
+        kind: Deployment
+        name: opensearch-dashboards
+        namespace: "{{ namespace }}"
+        wait_condition:
+          type: Available
+          status: "True"
+        wait_timeout: 300
+
+    - name: "🎉 Stack OpenSearch desplegado exitosamente"
+      debug:
+        msg:
+          - "================================"
+          - "✅ OPENSEARCH STACK LISTO"
+          - "================================"
+          - "📊 OpenSearch: Disponible"
+          - "🌐 Dashboards: Disponible"
+          - "🚰 Fluent Bit: Recolectando logs"
+          - "================================"
+          - "🚀 ACCESO:"
+          - "OpenSearch:"
+          - "kubectl port-forward -n {{ namespace }} svc/opensearch-service 9200:9200"
+          - "http://localhost:9200"
+          - ""
+          - "Dashboards:"
+          - "kubectl port-forward -n {{ namespace }} svc/opensearch-dashboards-service 5601:5601"
+          - "http://localhost:5601"
+          - "================================"
+          - "🔍 Los logs de AWX se están recolectando automáticamente"
+          - "📈 Índice: awx-logs-*"
+          - "================================"
+
+    - name: "📋 Información adicional"
+      debug:
+        msg:
+          - "🔧 CONFIGURACIÓN COMPLETADA:"
+          - "• Namespace: {{ namespace }}"
+          - "• OpenSearch sin autenticación para desarrollo"
+          - "• Fluent Bit monitoreando contenedores AWX"
+          - "• Logs almacenados en índice awx-logs-*"
+          - ""
+          - "📊 PRÓXIMOS PASOS:"
+          - "1. Acceder a Dashboards (puerto 5601)"
+          - "2. Crear Index Pattern: awx-logs-*"
+          - "3. Explorar logs de AWX en tiempo real"
+          - "4. Crear dashboards personalizados" 
