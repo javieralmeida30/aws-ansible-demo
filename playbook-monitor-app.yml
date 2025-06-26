@@ -1,0 +1,128 @@
+---
+- name: "Monitorear aplicación Flask CRUD"
+  hosts: localhost
+  gather_facts: yes
+  vars:
+    app_name: "flask-crud-demo"
+    app_port: "5000"
+    fecha_ejecucion: "{{ ansible_date_time.date }}"
+    hora_ejecucion: "{{ ansible_date_time.time }}"
+  
+  tasks:
+    - name: "Verificar estado del contenedor"
+      shell: docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" | grep {{ app_name }}
+      register: container_status
+      ignore_errors: yes
+      changed_when: false
+
+    - name: "Obtener logs del contenedor"
+      shell: docker logs --tail 20 {{ app_name }}
+      register: container_logs
+      ignore_errors: yes
+      changed_when: false
+
+    - name: "Verificar conectividad HTTP"
+      uri:
+        url: "http://localhost:{{ app_port }}"
+        method: GET
+        status_code: 200
+      register: http_check
+      ignore_errors: yes
+
+    - name: "Realizar health check"
+      uri:
+        url: "http://localhost:{{ app_port }}/health"
+        method: GET
+      register: health_check
+      ignore_errors: yes
+
+    - name: "Obtener estadísticas de tareas"
+      uri:
+        url: "http://localhost:{{ app_port }}/api/tasks"
+        method: GET
+      register: tasks_check
+      ignore_errors: yes
+
+    - name: "Verificar uso de recursos del contenedor"
+      shell: docker stats {{ app_name }} --no-stream --format "table {{.Container}}\t{{.CPUPerc}}\t{{.MemUsage}}\t{{.NetIO}}"
+      register: resource_usage
+      ignore_errors: yes
+      changed_when: false
+
+    - name: "Crear reporte de monitoreo"
+      copy:
+        dest: "/tmp/monitoring-report-{{ fecha_ejecucion }}.txt"
+        content: |
+          ===============================================
+          REPORTE DE MONITOREO - FLASK CRUD APP
+          ===============================================
+          Fecha: {{ fecha_ejecucion }} {{ hora_ejecucion }}
+          Aplicación: {{ app_name }}
+          Puerto: {{ app_port }}
+          
+          === ESTADO DEL CONTENEDOR ===
+          {{ container_status.stdout | default('Contenedor no encontrado') }}
+          
+          === CONECTIVIDAD HTTP ===
+          Status Code: {{ http_check.status | default('Error') }}
+          Response Time: {{ http_check.elapsed | default('N/A') }} seconds
+          
+          === HEALTH CHECK ===
+          {% if health_check.json is defined %}
+          Status: {{ health_check.json.status }}
+          Task Count: {{ health_check.json.task_count }}
+          Timestamp: {{ health_check.json.timestamp }}
+          {% else %}
+          Health Check: FAILED
+          {% endif %}
+          
+          === ESTADÍSTICAS DE TAREAS ===
+          {% if tasks_check.json is defined %}
+          Total de tareas: {{ tasks_check.json.tasks | length }}
+          {% for task in tasks_check.json.tasks[:5] %}
+          - {{ task.title }} ({{ task.status }})
+          {% endfor %}
+          {% else %}
+          No se pudieron obtener las tareas
+          {% endif %}
+          
+          === USO DE RECURSOS ===
+          {{ resource_usage.stdout | default('No disponible') }}
+          
+          === LOGS RECIENTES ===
+          {{ container_logs.stdout | default('No hay logs disponibles') }}
+          
+          ===============================================
+          Reporte generado automáticamente por Ansible
+          ===============================================
+
+    - name: "Mostrar resumen de monitoreo"
+      debug:
+        msg:
+          - "================================"
+          - "📊 RESUMEN DE MONITOREO"
+          - "================================"
+          - "Aplicación: {{ app_name }}"
+          - "Estado HTTP: {{ 'OK' if http_check.status == 200 else 'ERROR' }}"
+          - "Health Check: {{ health_check.json.status | default('ERROR') }}"
+          - "Tareas en DB: {{ health_check.json.task_count | default('N/A') }}"
+          - "Contenedor: {{ 'RUNNING' if container_status.rc == 0 else 'NOT FOUND' }}"
+          - "Reporte guardado en: /tmp/monitoring-report-{{ fecha_ejecucion }}.txt"
+          - "================================"
+
+    - name: "Verificar alertas (opcional)"
+      debug:
+        msg:
+          - "🚨 ALERTAS DETECTADAS:"
+          - "- Aplicación no responde"
+      when: http_check.status != 200
+
+    - name: "Mostrar recomendaciones"
+      debug:
+        msg:
+          - "💡 RECOMENDACIONES:"
+          - "- Aplicación funcionando correctamente"
+          - "- Monitoreo completado exitosamente"
+          - "- Para ver logs en tiempo real: docker logs -f {{ app_name }}"
+          - "- Para reiniciar: docker restart {{ app_name }}"
+      when: http_check.status == 200 
