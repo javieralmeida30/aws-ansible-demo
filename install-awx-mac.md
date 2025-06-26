@@ -1,4 +1,4 @@
-# Instalación Temporal de AWX en macOS
+# Instalación de AWX en macOS
 
 ## Prerrequisitos
 

@@ -1,0 +1,56 @@
+# Archivos con datos sensibles
+instrucciones-awx.txt
+*-credentials.txt
+*-secrets.txt
+*-tokens.txt
+*.key
+*.pem
+*.p12
+*.pfx
+
+# Archivos de configuración con datos sensibles
+.env
+.env.local
+.env.production
+config.local.json
+secrets.yml
+vault.yml
+
+# Archivos de ngrok
+ngrok
+ngrok.exe
+ngrok.zip
+ngrok-*.zip
+
+# Reportes del sistema que pueden contener info sensible
+reporte-sistema-*.txt
+system-report-*.txt
+deployment-report-*.html
+monitoring-report-*.txt
+
+# Logs que pueden contener información sensible
+*.log
+logs/
+/tmp/
+
+# Archivos de backup
+*.bak
+*.backup
+*.old
+
+# Archivos temporales
+.DS_Store
+Thumbs.db
+*~
+.swp
+.swo
+
+# Directorios temporales
+temp/
+tmp/
+cache/
+
+# Archivos de IDE con configuración local
+.vscode/settings.json
+.idea/workspace.xml
+*.sublime-workspace 
