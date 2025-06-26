@@ -1,6 +1,6 @@
 ---
 - name: "Información básica del sistema"
-  hosts: localhost
+  hosts: all
   gather_facts: yes
   connection: local
   

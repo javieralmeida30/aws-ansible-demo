@@ -1,0 +1,81 @@
+INSTRUCCIONES AWX - GESTIÓN DIARIA
+
+=== PARA PAUSAR HOY ===
+1. Detener ngrok: Ctrl + C en la terminal de ngrok
+2. Pausar AWX: kubectl scale deployment awx-local-task awx-local-web -n awx --replicas=0
+3. Opcional - Pausar Docker Desktop: Quit Docker Desktop
+
+=== PARA LEVANTAR MAÑANA ===
+1. Abrir Docker Desktop (si lo cerraste)
+2. Reactivar AWX: kubectl scale deployment awx-local-task awx-local-web -n awx --replicas=1
+3. Esperar que esté listo: kubectl get pods -n awx -w
+4. Crear túnel público: ./ngrok http 30080
+
+=== CREDENCIALES ===
+Usuario: admin
+Contraseña: br7C0lqiKNhIFB3N1wtj3UukQF4jIQb6
+
+=== URLS LOCALES ===
+- Local: http://localhost:30080
+- Red local: http://10.17.13.80:30080
+
+=== ELIMINAR COMPLETAMENTE ===
+kubectl delete namespace awx
+kubectl delete -k https://github.com/ansible/awx-operator/config/default?ref=2.19.1
+docker system prune -f
+
+=== TOKEN NGROK ===
+Ya configurado en: /Users/javieralmeida/Library/Application Support/ngrok/ngrok.yml
+
+# INSTRUCCIONES PARA GESTIONAR AWX
+# ==================================
+
+## URLs DE ACCESO
+- Local: http://localhost:30080
+- Red local: http://10.17.13.80:30080  
+- Público (ngrok): https://c6af-18-230-36-33.ngrok-free.app
+
+## CREDENCIALES
+- Usuario: admin
+- Password: br7C0lqiKNhIFB3N1wtj3UukQF4jIQb6
+
+## COMANDOS BÁSICOS
+
+### Verificar estado
+kubectl get pods -n awx
+
+### Pausar AWX (ahorrar recursos)
+kubectl scale deployment awx-operator-controller-manager --replicas=0 -n awx-operator-system
+kubectl scale deployment awx-local --replicas=0 -n awx
+
+### Reanudar AWX
+kubectl scale deployment awx-operator-controller-manager --replicas=1 -n awx-operator-system
+kubectl scale deployment awx-local --replicas=1 -n awx
+
+### Reiniciar servicios
+kubectl delete pod -l app.kubernetes.io/name=awx-local -n awx
+
+## ACTUALIZAR PROYECTO DESPUÉS DE CAMBIOS EN GITHUB
+
+### 1. En AWX Web Interface:
+1. Ir a "Projects" → "Mis Playbooks"
+2. Hacer clic en el ícono de "Sync" 🔄
+3. Esperar a que aparezca "Successful"
+
+### 2. Verificar cambios:
+1. Ir a "Templates" → "Información del Sistema"
+2. Hacer clic en "Launch" 🚀
+3. Ver el job ejecutándose con los cambios
+
+## NGROK (ACCESO PÚBLICO)
+./ngrok http 30080 --authtoken 2z0mASvBwdeMNVxXS3WzMIfOfEW_2yodQdEB3XRE2xpWqS7VF
+
+## DESINSTALAR COMPLETAMENTE
+./uninstall-awx.sh
+
+## STRUCTURE DE ARCHIVOS
+- playbook-info-sistema.yml: Playbook complejo con variables de red
+- playbook-simple.yml: Playbook simplificado para contenedores
+- inventory.ini: Inventario local para testing
+- install-awx.sh: Script de instalación
+- uninstall-awx.sh: Script de desinstalación 

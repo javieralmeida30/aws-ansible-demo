@@ -285,14 +285,14 @@
           CMD ["python", "app.py"]
 
     - name: "Verificar si el contenedor ya existe"
-      shell: docker ps -a --format "table {{.Names}}" | grep -w "{{ app_name }}"
+      shell: docker ps -a --format "table {{ '{{.Names}}' }}" | grep -w "{{ app_name }}"
       register: container_exists
       ignore_errors: yes
       changed_when: false
 
     - name: "Parar y eliminar contenedor existente"
       shell: docker stop {{ app_name }} && docker rm {{ app_name }}
-      when: container_exists.rc == 0
+      when: container_exists is succeeded and container_exists.stdout != ""
       ignore_errors: yes
 
     - name: "Construir imagen Docker"
@@ -318,7 +318,7 @@
         timeout: 30
 
     - name: "Verificar estado del contenedor"
-      shell: docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" | grep {{ app_name }}
+      shell: docker ps --format "table {{ '{{.Names}}' }}\t{{ '{{.Status}}' }}\t{{ '{{.Ports}}' }}" | grep {{ app_name }}
       register: container_status
       changed_when: false
 

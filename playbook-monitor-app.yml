@@ -10,7 +10,7 @@
   
   tasks:
     - name: "Verificar estado del contenedor"
-      shell: docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" | grep {{ app_name }}
+      shell: docker ps --format "table {{ '{{.Names}}' }}\t{{ '{{.Status}}' }}\t{{ '{{.Ports}}' }}" | grep {{ app_name }}
       register: container_status
       ignore_errors: yes
       changed_when: false
@@ -44,7 +44,7 @@
       ignore_errors: yes
 
     - name: "Verificar uso de recursos del contenedor"
-      shell: docker stats {{ app_name }} --no-stream --format "table {{.Container}}\t{{.CPUPerc}}\t{{.MemUsage}}\t{{.NetIO}}"
+      shell: docker stats {{ app_name }} --no-stream --format "table {{ '{{.Container}}' }}\t{{ '{{.CPUPerc}}' }}\t{{ '{{.MemUsage}}' }}\t{{ '{{.NetIO}}' }}"
       register: resource_usage
       ignore_errors: yes
       changed_when: false

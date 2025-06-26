@@ -147,4 +147,4 @@
           - "Sistema: {{ ansible_distribution | default('Desconocido') }} {{ ansible_distribution_version | default('') }}"
           - "Python: {{ python_version.stdout | default('No encontrado') }}"
           - "Ejecutado en: {{ fecha_ejecucion }} a las {{ hora_ejecucion }}"
-          - "================================" 
+          - "================================"
