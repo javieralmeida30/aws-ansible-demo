@@ -198,8 +198,8 @@
                               <div>Completadas</div>
                           </div>
                           <div class="stat-card">
-                              <div class="stat-number" id="uptime">{{ uptime }}</div>
-                              <div>Uptime</div>
+                              <div class="stat-number" id="uptime">Demo</div>
+                              <div>Modo</div>
                           </div>
                       </div>
                       
@@ -340,8 +340,7 @@
           def index():
               return render_template_string(
                   HTML_TEMPLATE, 
-                  now=datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                  uptime="Demo Mode"
+                  now=datetime.now().strftime('%Y-%m-%d %H:%M:%S')
               )
 
           @app.route('/api/tasks', methods=['GET'])
