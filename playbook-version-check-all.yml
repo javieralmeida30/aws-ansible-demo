@@ -1,6 +1,7 @@
 ---
 - name: "Verificar versiones de herramientas del sistema"
-  hosts: localhost
+  hosts: all
+  connection: local
   gather_facts: yes
   vars:
     fecha_ejecucion: "{{ ansible_date_time.date }}"
