@@ -1,0 +1,230 @@
+---
+- name: "🌐 Sitio Web Súper Fácil - ¡Solo Python!"
+  hosts: localhost
+  gather_facts: yes
+  vars:
+    puerto: "9999"
+    directorio: "/var/tmp/sitio-facil"
+  
+  tasks:
+    - name: "🎯 Crear directorio del sitio"
+      file:
+        path: "{{ directorio }}"
+        state: directory
+        mode: '0755'
+
+    - name: "📄 Crear página web principal"
+      copy:
+        dest: "{{ directorio }}/index.html"
+        content: |
+          <!DOCTYPE html>
+          <html lang="es">
+          <head>
+              <meta charset="UTF-8">
+              <meta name="viewport" content="width=device-width, initial-scale=1.0">
+              <title>🚀 Sitio Web desde AWX</title>
+              <style>
+                  body {
+                      font-family: Arial, sans-serif;
+                      background: linear-gradient(45deg, #667eea, #764ba2);
+                      margin: 0;
+                      padding: 0;
+                      min-height: 100vh;
+                      display: flex;
+                      justify-content: center;
+                      align-items: center;
+                  }
+                  .container {
+                      background: white;
+                      padding: 40px;
+                      border-radius: 20px;
+                      box-shadow: 0 20px 40px rgba(0,0,0,0.2);
+                      text-align: center;
+                      max-width: 600px;
+                  }
+                  h1 {
+                      color: #333;
+                      font-size: 3em;
+                      margin-bottom: 20px;
+                      animation: bounce 2s infinite;
+                  }
+                  @keyframes bounce {
+                      0%, 20%, 50%, 80%, 100% { transform: translateY(0); }
+                      40% { transform: translateY(-30px); }
+                      60% { transform: translateY(-15px); }
+                  }
+                  .success {
+                      background: #28a745;
+                      color: white;
+                      padding: 15px;
+                      border-radius: 10px;
+                      margin: 20px 0;
+                      font-size: 1.2em;
+                  }
+                  .info {
+                      background: #17a2b8;
+                      color: white;
+                      padding: 15px;
+                      border-radius: 10px;
+                      margin: 20px 0;
+                  }
+                  .btn {
+                      background: linear-gradient(45deg, #667eea, #764ba2);
+                      color: white;
+                      padding: 15px 30px;
+                      border: none;
+                      border-radius: 25px;
+                      font-size: 1.1em;
+                      cursor: pointer;
+                      margin: 10px;
+                      transition: transform 0.3s;
+                  }
+                  .btn:hover {
+                      transform: translateY(-3px);
+                  }
+              </style>
+          </head>
+          <body>
+              <div class="container">
+                  <h1>🚀 ¡FUNCIONA!</h1>
+                  
+                  <div class="success">
+                      ✅ Sitio web ejecutándose desde AWX
+                  </div>
+                  
+                  <div class="info">
+                      <strong>🐍 Tecnología:</strong> Python HTTP Server<br>
+                      <strong>🌐 Puerto:</strong> {{ puerto }}<br>
+                      <strong>📅 Fecha:</strong> {{ ansible_date_time.date }}<br>
+                      <strong>⏰ Hora:</strong> {{ ansible_date_time.time }}
+                  </div>
+                  
+                  <h2>🎉 ¡Lo logramos!</h2>
+                  <p>Este sitio web está corriendo dentro del contenedor AWX usando solo Python estándar.</p>
+                  
+                  <button class="btn" onclick="alert('¡Hola desde AWX! 🚀')">
+                      🎯 Hacer Click
+                  </button>
+                  
+                  <button class="btn" onclick="location.reload()">
+                      🔄 Refrescar
+                  </button>
+                  
+                  <div style="margin-top: 30px; color: #666;">
+                      <small>Generado por Ansible en AWX</small>
+                  </div>
+              </div>
+              
+              <script>
+                  // Efecto visual cada 5 segundos
+                  setInterval(function() {
+                      document.body.style.background = 
+                          'linear-gradient(45deg, #' + 
+                          Math.floor(Math.random()*16777215).toString(16) + ', #' +
+                          Math.floor(Math.random()*16777215).toString(16) + ')';
+                  }, 5000);
+              </script>
+          </body>
+          </html>
+
+    - name: "🚀 Crear servidor web simple"
+      copy:
+        dest: "{{ directorio }}/servidor.py"
+        mode: '0755'
+        content: |
+          #!/usr/bin/env python3
+          import http.server
+          import socketserver
+          import os
+          from datetime import datetime
+          
+          PORT = {{ puerto }}
+          DIRECTORY = "{{ directorio }}"
+          
+          class SimpleHandler(http.server.SimpleHTTPRequestHandler):
+              def __init__(self, *args, **kwargs):
+                  super().__init__(*args, directory=DIRECTORY, **kwargs)
+              
+              def log_message(self, format, *args):
+                  print(f"[{datetime.now().strftime('%H:%M:%S')}] {format % args}")
+          
+          print(f"🚀 Iniciando servidor web...")
+          print(f"📁 Directorio: {DIRECTORY}")
+          print(f"🌐 Puerto: {PORT}")
+          print(f"🔗 URL: http://localhost:{PORT}")
+          
+          try:
+              with socketserver.TCPServer(("", PORT), SimpleHandler) as httpd:
+                  print(f"✅ Servidor corriendo en puerto {PORT}")
+                  print("🔄 Presiona Ctrl+C para detener")
+                  httpd.serve_forever()
+          except Exception as e:
+              print(f"❌ Error: {e}")
+
+    - name: "🌐 Iniciar servidor web en background"
+      shell: |
+        cd {{ directorio }}
+        python3 servidor.py > servidor.log 2>&1 &
+        echo $! > servidor.pid
+        sleep 2
+        if kill -0 $(cat servidor.pid) 2>/dev/null; then
+          echo "✅ Servidor iniciado correctamente"
+        else
+          echo "❌ Error iniciando servidor"
+          exit 1
+        fi
+      register: inicio_servidor
+
+    - name: "⏳ Verificar que el puerto esté abierto"
+      wait_for:
+        port: "{{ puerto }}"
+        host: "127.0.0.1"
+        delay: 1
+        timeout: 10
+      register: puerto_check
+
+    - name: "🏥 Test del sitio web"
+      uri:
+        url: "http://127.0.0.1:{{ puerto }}"
+        method: GET
+        timeout: 5
+      register: web_test
+      ignore_errors: yes
+
+    - name: "📊 Verificar proceso"
+      shell: |
+        cd {{ directorio }}
+        if [ -f servidor.pid ]; then
+          PID=$(cat servidor.pid)
+          if kill -0 $PID 2>/dev/null; then
+            echo "✅ Proceso corriendo (PID: $PID)"
+          else
+            echo "❌ Proceso no encontrado"
+          fi
+        fi
+      register: proceso_check
+      changed_when: false
+
+    - name: "🎉 ¡SITIO WEB LISTO!"
+      debug:
+        msg:
+          - "================================"
+          - "🌐 SITIO WEB FUNCIONANDO"
+          - "================================"
+          - "✅ Estado: {{ 'ONLINE' if web_test.status == 200 else 'OFFLINE' }}"
+          - "🌐 Puerto: {{ puerto }}"
+          - "📁 Directorio: {{ directorio }}"
+          - "================================"
+          - "🚀 PARA ACCEDER:"
+          - "kubectl port-forward -n awx deployment/awx-local-task {{ puerto }}:{{ puerto }}"
+          - "Luego abrir: http://localhost:{{ puerto }}"
+          - "================================"
+          - "🎯 ¡SÚPER FÁCIL Y FUNCIONANDO!"
+          - "================================"
+
+    - name: "📋 Información adicional"
+      debug:
+        msg:
+          - "📊 Proceso: {{ proceso_check.stdout }}"
+          - "🌐 Web Test: {{ 'OK' if web_test.status == 200 else 'FAIL' }}"
+          - "⚡ Inicio: {{ inicio_servidor.stdout }}" 
