@@ -1,0 +1,150 @@
+---
+- name: "Verificar versiones de herramientas del sistema"
+  hosts: all
+  gather_facts: yes
+  vars:
+    fecha_ejecucion: "{{ ansible_date_time.date }}"
+    hora_ejecucion: "{{ ansible_date_time.time }}"
+  
+  tasks:
+    - name: "Mostrar información básica del sistema"
+      debug:
+        msg:
+          - "=== INFORMACIÓN DEL SISTEMA ==="
+          - "Sistema Operativo: {{ ansible_distribution | default('No disponible') }} {{ ansible_distribution_version | default('') }}"
+          - "Kernel: {{ ansible_kernel | default('No disponible') }}"
+          - "Arquitectura: {{ ansible_architecture | default('No disponible') }}"
+          - "Hostname: {{ ansible_hostname | default('No disponible') }}"
+          - "Fecha de ejecución: {{ fecha_ejecucion }} {{ hora_ejecucion }}"
+          - "================================"
+
+    - name: "Verificar versión de Python"
+      command: python3 --version
+      register: python_version
+      ignore_errors: yes
+      changed_when: false
+
+    - name: "Mostrar versión de Python"
+      debug:
+        msg: "Python instalado: {{ python_version.stdout | default('Python no encontrado') }}"
+
+    - name: "Verificar versión de Python2 (si existe)"
+      command: python --version
+      register: python2_version
+      ignore_errors: yes
+      changed_when: false
+
+    - name: "Mostrar versión de Python2"
+      debug:
+        msg: "Python2: {{ python2_version.stdout | default('Python2 no encontrado') }}"
+      when: python2_version.rc == 0
+
+    - name: "Verificar pip"
+      command: pip3 --version
+      register: pip_version
+      ignore_errors: yes
+      changed_when: false
+
+    - name: "Mostrar versión de pip"
+      debug:
+        msg: "pip instalado: {{ pip_version.stdout | default('pip no encontrado') }}"
+
+    - name: "Verificar git"
+      command: git --version
+      register: git_version
+      ignore_errors: yes
+      changed_when: false
+
+    - name: "Mostrar versión de git"
+      debug:
+        msg: "Git: {{ git_version.stdout | default('Git no encontrado') }}"
+
+    - name: "Verificar curl"
+      command: curl --version
+      register: curl_version
+      ignore_errors: yes
+      changed_when: false
+
+    - name: "Mostrar versión de curl"
+      debug:
+        msg: "Curl: {{ curl_version.stdout_lines[0] | default('Curl no encontrado') }}"
+      when: curl_version.rc == 0
+
+    - name: "Verificar wget"
+      command: wget --version
+      register: wget_version
+      ignore_errors: yes
+      changed_when: false
+
+    - name: "Mostrar versión de wget"
+      debug:
+        msg: "Wget: {{ wget_version.stdout_lines[0] | default('Wget no encontrado') }}"
+      when: wget_version.rc == 0
+
+    - name: "Verificar nano"
+      command: nano --version
+      register: nano_version
+      ignore_errors: yes
+      changed_when: false
+
+    - name: "Mostrar versión de nano"
+      debug:
+        msg: "Nano: {{ nano_version.stdout_lines[0] | default('Nano no encontrado') }}"
+      when: nano_version.rc == 0
+
+    - name: "Verificar vim"
+      command: vim --version
+      register: vim_version
+      ignore_errors: yes
+      changed_when: false
+
+    - name: "Mostrar versión de vim"
+      debug:
+        msg: "Vim: {{ vim_version.stdout_lines[0] | default('Vim no encontrado') }}"
+      when: vim_version.rc == 0
+
+    - name: "Verificar espacio en disco"
+      command: df -h /
+      register: disk_space
+      ignore_errors: yes
+      changed_when: false
+
+    - name: "Mostrar espacio en disco"
+      debug:
+        msg: 
+          - "=== ESPACIO EN DISCO ==="
+          - "{{ disk_space.stdout_lines | default(['No se pudo obtener información del disco']) | join('\n') }}"
+
+    - name: "Verificar memoria RAM"
+      command: free -h
+      register: memory_info
+      ignore_errors: yes
+      changed_when: false
+
+    - name: "Mostrar información de memoria"
+      debug:
+        msg:
+          - "=== MEMORIA RAM ==="
+          - "{{ memory_info.stdout_lines | default(['No se pudo obtener información de memoria']) | join('\n') }}"
+
+    - name: "Verificar procesos activos (top 10)"
+      shell: ps aux | head -11
+      register: top_processes
+      ignore_errors: yes
+      changed_when: false
+
+    - name: "Mostrar procesos principales"
+      debug:
+        msg:
+          - "=== TOP 10 PROCESOS ==="
+          - "{{ top_processes.stdout_lines | default(['No se pudo obtener información de procesos']) | join('\n') }}"
+
+    - name: "Generar resumen final"
+      debug:
+        msg:
+          - "================================"
+          - "RESUMEN DE VERIFICACIÓN COMPLETADO"
+          - "Sistema: {{ ansible_distribution | default('Desconocido') }} {{ ansible_distribution_version | default('') }}"
+          - "Python: {{ python_version.stdout | default('No encontrado') }}"
+          - "Ejecutado en: {{ fecha_ejecucion }} a las {{ hora_ejecucion }}"
+          - "================================" 
