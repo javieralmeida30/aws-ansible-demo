@@ -1,0 +1,381 @@
+---
+- name: "🔍 OpenSearch Stack - Versión Final"
+  hosts: localhost
+  gather_facts: yes
+  vars:
+    logging_namespace: "logging"
+    opensearch_version: "2.11.1"
+    kubectl_path: "/tmp/kubectl"
+    
+  tasks:
+    - name: "📋 Información del despliegue"
+      debug:
+        msg:
+          - "================================"
+          - "🔍 OPENSEARCH STACK FINAL"
+          - "================================"
+          - "Namespace: {{ logging_namespace }}"
+          - "OpenSearch: {{ opensearch_version }}"
+          - "kubectl: {{ kubectl_path }}"
+          - "================================"
+
+    - name: "🔧 Verificar kubectl"
+      shell: "{{ kubectl_path }} version --client"
+      register: kubectl_check
+      ignore_errors: yes
+
+    - name: "📊 Estado kubectl"
+      debug:
+        msg: "{{ kubectl_check.stdout }}"
+
+    - name: "🏗️ Crear namespace logging"
+      shell: |
+        {{ kubectl_path }} create namespace {{ logging_namespace }} --dry-run=client -o yaml | {{ kubectl_path }} apply -f -
+      register: namespace_result
+      changed_when: "'created' in namespace_result.stdout or 'configured' in namespace_result.stdout"
+
+    - name: "📊 Resultado namespace"
+      debug:
+        msg: "{{ namespace_result.stdout }}"
+
+    - name: "🗄️ Desplegar OpenSearch"
+      shell: |
+        cat <<EOF | {{ kubectl_path }} apply -f -
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata:
+          name: opensearch
+          namespace: {{ logging_namespace }}
+          labels:
+            app: opensearch
+        spec:
+          replicas: 1
+          selector:
+            matchLabels:
+              app: opensearch
+          template:
+            metadata:
+              labels:
+                app: opensearch
+            spec:
+              containers:
+              - name: opensearch
+                image: opensearchproject/opensearch:{{ opensearch_version }}
+                ports:
+                - containerPort: 9200
+                  name: http
+                - containerPort: 9300
+                  name: transport
+                env:
+                - name: discovery.type
+                  value: single-node
+                - name: OPENSEARCH_JAVA_OPTS
+                  value: "-Xms512m -Xmx512m"
+                - name: DISABLE_SECURITY_PLUGIN
+                  value: "true"
+                resources:
+                  requests:
+                    memory: "1Gi"
+                    cpu: "500m"
+                  limits:
+                    memory: "2Gi"
+                    cpu: "1000m"
+        EOF
+      register: opensearch_deploy
+
+    - name: "🌐 Crear Service OpenSearch"
+      shell: |
+        cat <<EOF | {{ kubectl_path }} apply -f -
+        apiVersion: v1
+        kind: Service
+        metadata:
+          name: opensearch-service
+          namespace: {{ logging_namespace }}
+          labels:
+            app: opensearch
+        spec:
+          selector:
+            app: opensearch
+          ports:
+          - name: http
+            port: 9200
+            targetPort: 9200
+          - name: transport
+            port: 9300
+            targetPort: 9300
+          type: ClusterIP
+        EOF
+      register: opensearch_service
+
+    - name: "📊 Desplegar OpenSearch Dashboards"
+      shell: |
+        cat <<EOF | {{ kubectl_path }} apply -f -
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata:
+          name: opensearch-dashboards
+          namespace: {{ logging_namespace }}
+          labels:
+            app: opensearch-dashboards
+        spec:
+          replicas: 1
+          selector:
+            matchLabels:
+              app: opensearch-dashboards
+          template:
+            metadata:
+              labels:
+                app: opensearch-dashboards
+            spec:
+              containers:
+              - name: opensearch-dashboards
+                image: opensearchproject/opensearch-dashboards:{{ opensearch_version }}
+                ports:
+                - containerPort: 5601
+                  name: http
+                env:
+                - name: OPENSEARCH_HOSTS
+                  value: "http://opensearch-service:9200"
+                - name: DISABLE_SECURITY_DASHBOARDS_PLUGIN
+                  value: "true"
+                resources:
+                  requests:
+                    memory: "512Mi"
+                    cpu: "250m"
+                  limits:
+                    memory: "1Gi"
+                    cpu: "500m"
+        EOF
+      register: dashboards_deploy
+
+    - name: "🌐 Crear Service OpenSearch Dashboards"
+      shell: |
+        cat <<EOF | {{ kubectl_path }} apply -f -
+        apiVersion: v1
+        kind: Service
+        metadata:
+          name: opensearch-dashboards-service
+          namespace: {{ logging_namespace }}
+          labels:
+            app: opensearch-dashboards
+        spec:
+          selector:
+            app: opensearch-dashboards
+          ports:
+          - name: http
+            port: 5601
+            targetPort: 5601
+          type: ClusterIP
+        EOF
+      register: dashboards_service
+
+    - name: "🚰 Crear ConfigMap Fluent Bit"
+      shell: |
+        cat <<EOF | {{ kubectl_path }} apply -f -
+        apiVersion: v1
+        kind: ConfigMap
+        metadata:
+          name: fluent-bit-config
+          namespace: {{ logging_namespace }}
+        data:
+          fluent-bit.conf: |
+            [SERVICE]
+                Flush         5
+                Log_Level     info
+                Daemon        off
+                Parsers_File  parsers.conf
+                HTTP_Server   On
+                HTTP_Listen   0.0.0.0
+                HTTP_Port     2020
+
+            [INPUT]
+                Name              tail
+                Path              /var/log/containers/*awx*.log
+                Parser            docker
+                Tag               awx.*
+                Refresh_Interval  5
+                Mem_Buf_Limit     50MB
+                Skip_Long_Lines   On
+
+            [FILTER]
+                Name                kubernetes
+                Match               awx.*
+                Kube_URL            https://kubernetes.default.svc:443
+                Kube_CA_File        /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+                Kube_Token_File     /var/run/secrets/kubernetes.io/serviceaccount/token
+                Merge_Log           On
+                K8S-Logging.Parser  On
+                K8S-Logging.Exclude Off
+
+            [OUTPUT]
+                Name            es
+                Match           awx.*
+                Host            opensearch-service
+                Port            9200
+                Index           awx-logs
+                Type            _doc
+                Logstash_Format On
+                Logstash_Prefix awx-logs
+                Replace_Dots    On
+                Retry_Limit     False
+                Suppress_Type_Name On
+
+          parsers.conf: |
+            [PARSER]
+                Name        docker
+                Format      json
+                Time_Key    time
+                Time_Format %Y-%m-%dT%H:%M:%S.%L
+                Time_Keep   On
+        EOF
+      register: fluent_config
+
+    - name: "🔐 Crear RBAC para Fluent Bit"
+      shell: |
+        cat <<EOF | {{ kubectl_path }} apply -f -
+        apiVersion: v1
+        kind: ServiceAccount
+        metadata:
+          name: fluent-bit
+          namespace: {{ logging_namespace }}
+        ---
+        apiVersion: rbac.authorization.k8s.io/v1
+        kind: ClusterRole
+        metadata:
+          name: fluent-bit
+        rules:
+        - apiGroups: [""]
+          resources: ["pods", "namespaces"]
+          verbs: ["get", "list", "watch"]
+        ---
+        apiVersion: rbac.authorization.k8s.io/v1
+        kind: ClusterRoleBinding
+        metadata:
+          name: fluent-bit
+        roleRef:
+          apiGroup: rbac.authorization.k8s.io
+          kind: ClusterRole
+          name: fluent-bit
+        subjects:
+        - kind: ServiceAccount
+          name: fluent-bit
+          namespace: {{ logging_namespace }}
+        EOF
+      register: fluent_rbac
+
+    - name: "🚰 Desplegar Fluent Bit DaemonSet"
+      shell: |
+        cat <<EOF | {{ kubectl_path }} apply -f -
+        apiVersion: apps/v1
+        kind: DaemonSet
+        metadata:
+          name: fluent-bit
+          namespace: {{ logging_namespace }}
+          labels:
+            app: fluent-bit
+        spec:
+          selector:
+            matchLabels:
+              app: fluent-bit
+          template:
+            metadata:
+              labels:
+                app: fluent-bit
+            spec:
+              serviceAccountName: fluent-bit
+              containers:
+              - name: fluent-bit
+                image: fluent/fluent-bit:2.2.0
+                ports:
+                - containerPort: 2020
+                  name: http
+                volumeMounts:
+                - name: config
+                  mountPath: /fluent-bit/etc/
+                - name: varlog
+                  mountPath: /var/log
+                  readOnly: true
+                - name: varlibdockercontainers
+                  mountPath: /var/lib/docker/containers
+                  readOnly: true
+                resources:
+                  requests:
+                    memory: "100Mi"
+                    cpu: "100m"
+                  limits:
+                    memory: "200Mi"
+                    cpu: "200m"
+              volumes:
+              - name: config
+                configMap:
+                  name: fluent-bit-config
+              - name: varlog
+                hostPath:
+                  path: /var/log
+              - name: varlibdockercontainers
+                hostPath:
+                  path: /var/lib/docker/containers
+        EOF
+      register: fluent_daemonset
+
+    - name: "⏳ Esperar que OpenSearch esté listo"
+      shell: |
+        {{ kubectl_path }} wait --for=condition=available --timeout=300s deployment/opensearch -n {{ logging_namespace }}
+      register: opensearch_ready
+      ignore_errors: yes
+
+    - name: "⏳ Esperar que Dashboards esté listo"
+      shell: |
+        {{ kubectl_path }} wait --for=condition=available --timeout=300s deployment/opensearch-dashboards -n {{ logging_namespace }}
+      register: dashboards_ready
+      ignore_errors: yes
+
+    - name: "🔍 Verificar estado de los pods"
+      shell: |
+        echo "=== PODS EN NAMESPACE {{ logging_namespace }} ==="
+        {{ kubectl_path }} get pods -n {{ logging_namespace }}
+        echo ""
+        echo "=== SERVICES ==="
+        {{ kubectl_path }} get svc -n {{ logging_namespace }}
+      register: pods_status
+
+    - name: "📊 Estado de los pods"
+      debug:
+        msg: "{{ pods_status.stdout_lines }}"
+
+    - name: "🎉 Stack OpenSearch desplegado"
+      debug:
+        msg:
+          - "================================"
+          - "✅ OPENSEARCH STACK LISTO"
+          - "================================"
+          - "📊 OpenSearch: {{ 'LISTO' if opensearch_ready.rc == 0 else 'PENDIENTE' }}"
+          - "🌐 Dashboards: {{ 'LISTO' if dashboards_ready.rc == 0 else 'PENDIENTE' }}"
+          - "🚰 Fluent Bit: Desplegado"
+          - "================================"
+          - "🚀 ACCESO:"
+          - "OpenSearch:"
+          - "kubectl port-forward -n {{ logging_namespace }} svc/opensearch-service 9200:9200"
+          - "http://localhost:9200"
+          - ""
+          - "Dashboards:"
+          - "kubectl port-forward -n {{ logging_namespace }} svc/opensearch-dashboards-service 5601:5601"
+          - "http://localhost:5601"
+          - "================================"
+          - "🔍 Los logs de AWX se recolectan automáticamente"
+          - "📈 Índice: awx-logs-*"
+          - "================================"
+
+    - name: "🎯 Instrucciones finales"
+      debug:
+        msg:
+          - "🔧 PRÓXIMOS PASOS:"
+          - "1. Hacer port-forward a Dashboards (puerto 5601)"
+          - "2. Crear Index Pattern: awx-logs-*"
+          - "3. Explorar logs de AWX en tiempo real"
+          - "4. Crear dashboards para monitoreo"
+          - ""
+          - "💡 TIPS:"
+          - "• Los logs pueden tardar unos minutos en aparecer"
+          - "• Ejecuta más playbooks para generar logs"
+          - "• Filtra por 'awx' para ver solo logs relevantes" 
