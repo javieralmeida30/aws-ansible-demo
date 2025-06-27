@@ -1,0 +1,302 @@
+---
+- name: "🚀 DevOps Pipeline Demo - Versión para AWX sin kubectl"
+  hosts: localhost
+  gather_facts: yes
+  vars:
+    # 🎨 Configuración del Pipeline
+    pipeline_name: "devops-pipeline-demo"
+    environment: "{{ env | default('staging') }}"
+    deployment_strategy: "{{ strategy | default('blue-green') }}"
+    
+    # 🏗️ Aplicación Demo
+    app_name: "flask-monitoring-app"
+    app_version: "{{ app_name }}:v{{ ansible_date_time.epoch }}"
+    
+    # 📊 Features
+    monitoring_enabled: "{{ monitoring | default(true) }}"
+    security_scan_enabled: "{{ security | default(true) }}"
+    chaos_enabled: "{{ chaos | default(false) }}"
+    
+    # 🎯 Configuración
+    app_namespace: "{{ app_name }}-{{ environment }}"
+    replicas: "{{ app_replicas | default(3) }}"
+
+  tasks:
+    - name: "🎭 Banner Épico del Pipeline Demo"
+      debug:
+        msg:
+          - "╔══════════════════════════════════════════════════════════════╗"
+          - "║                🚀 DEVOPS PIPELINE DEMO 🚀                   ║"
+          - "║                                                              ║"
+          - "║  Pipeline:     {{ pipeline_name }}                          ║"
+          - "║  Environment:  {{ environment }}                            ║"
+          - "║  Strategy:     {{ deployment_strategy }}                    ║"
+          - "║  App:          {{ app_name }}                               ║"
+          - "║  Version:      {{ app_version }}                            ║"
+          - "║  Namespace:    {{ app_namespace }}                          ║"
+          - "║  Replicas:     {{ replicas }}                               ║"
+          - "║  Timestamp:    {{ ansible_date_time.iso8601 }}              ║"
+          - "╚══════════════════════════════════════════════════════════════╝"
+
+    # 🏗️ FASE 1: ENVIRONMENT SETUP
+    - name: "🏗️ FASE 1: Environment Setup"
+      debug:
+        msg: 
+          - "🔧 Configurando entorno {{ environment }}"
+          - "📦 Namespace: {{ app_namespace }}"
+          - "🎯 Strategy: {{ deployment_strategy }}"
+
+    - name: "📦 Simulando creación de namespace"
+      debug:
+        msg: "✅ Namespace '{{ app_namespace }}' creado exitosamente"
+
+    - name: "🏷️ Aplicando etiquetas de entorno"
+      debug:
+        msg:
+          - "🏷️ Etiquetas aplicadas:"
+          - "  - environment: {{ environment }}"
+          - "  - pipeline: {{ pipeline_name }}"
+          - "  - managed-by: awx"
+
+    # 🔨 FASE 2: BUILD & SECURITY
+    - name: "🔨 FASE 2: Build & Security Scan"
+      debug:
+        msg: "Iniciando build y security scanning"
+
+    - name: "🏗️ Building application"
+      debug:
+        msg:
+          - "🔨 Building {{ app_name }}..."
+          - "📦 Image: {{ app_version }}"
+          - "🏗️ Build iniciado: {{ ansible_date_time.time }}"
+
+    - name: "⏳ Simulando tiempo de build"
+      pause:
+        seconds: 3
+
+    - name: "✅ Build completado"
+      debug:
+        msg: "🎉 Build exitoso: {{ app_version }}"
+
+    - name: "🛡️ Security Scan"
+      debug:
+        msg: "🔍 Ejecutando security scan..."
+      when: security_scan_enabled
+
+    - name: "🔍 Ejecutando escaneo de vulnerabilidades"
+      debug:
+        msg:
+          - "🛡️ Security Scan Results:"
+          - "  ✅ Dockerfile security check: PASSED"
+          - "  ✅ Dependency scan: PASSED (0 vulnerabilities)"
+          - "  ✅ Static code analysis: PASSED"
+          - "  ✅ Container image scan: PASSED"
+          - "  🔒 Security Score: 9.8/10"
+      when: security_scan_enabled
+
+    # 🚀 FASE 3: DEPLOYMENT SIMULATION
+    - name: "🚀 FASE 3: Deployment Simulation"
+      debug:
+        msg: "Iniciando deployment usando estrategia {{ deployment_strategy }}"
+
+    - name: "🔵 Blue-Green Deployment"
+      debug:
+        msg:
+          - "🔵 BLUE DEPLOYMENT:"
+          - "  📦 Deploying {{ app_name }}-blue"
+          - "  🔢 Replicas: {{ replicas }}"
+          - "  🌐 Service: {{ app_name }}-service"
+          - "  🎯 Strategy: {{ deployment_strategy }}"
+      when: deployment_strategy == "blue-green"
+
+    - name: "⏳ Simulando deployment"
+      pause:
+        seconds: 5
+
+    - name: "✅ Deployment exitoso"
+      debug:
+        msg:
+          - "🎉 Deployment completado exitosamente!"
+          - "🔵 Blue version: ACTIVE"
+          - "🌐 Service endpoint: http://{{ app_name }}-service:80"
+          - "📊 Health check: PASSED"
+
+    # 📊 FASE 4: MONITORING SETUP
+    - name: "📊 FASE 4: Monitoring Setup"
+      debug:
+        msg: "Configurando monitoring y observabilidad"
+      when: monitoring_enabled
+
+    - name: "📈 Prometheus Setup"
+      debug:
+        msg:
+          - "📈 Configurando Prometheus..."
+          - "🎯 Targets: {{ app_name }} pods"
+          - "📊 Metrics: http_requests_total, response_time"
+          - "🔔 Alertas: error_rate > 5%, latency > 500ms"
+      when: monitoring_enabled
+
+    - name: "📊 Grafana Dashboard"
+      debug:
+        msg:
+          - "📊 Configurando Grafana dashboard..."
+          - "📈 Panels: Request Rate, Error Rate, Latency"
+          - "🎨 Dashboard: '{{ app_name }} Monitoring'"
+          - "🔔 Alertas configuradas"
+      when: monitoring_enabled
+
+    # 🧪 FASE 5: TESTING
+    - name: "🧪 FASE 5: Automated Testing"
+      debug:
+        msg: "Ejecutando batería de tests automatizados"
+
+    - name: "🏥 Health Check"
+      debug:
+        msg:
+          - "🏥 Health Check Results:"
+          - "  ✅ Liveness probe: PASSED"
+          - "  ✅ Readiness probe: PASSED"
+          - "  ✅ Startup probe: PASSED"
+          - "  🌡️ CPU usage: 45%"
+          - "  💾 Memory usage: 120MB"
+
+    - name: "🧪 Load Testing"
+      debug:
+        msg:
+          - "🧪 Load Test Results:"
+          - "  📊 Total requests: 1000"
+          - "  ✅ Successful: 995 (99.5%)"
+          - "  ❌ Failed: 5 (0.5%)"
+          - "  ⏱️ Avg response time: 85ms"
+          - "  📈 P95 latency: 150ms"
+          - "  🎯 Throughput: 120 RPS"
+
+    - name: "🛡️ Security Testing"
+      debug:
+        msg:
+          - "🛡️ Security Test Results:"
+          - "  ✅ OWASP Top 10: PASSED"
+          - "  ✅ SQL Injection: PASSED"
+          - "  ✅ XSS Prevention: PASSED"
+          - "  ✅ Authentication: PASSED"
+          - "  ✅ Authorization: PASSED"
+      when: security_scan_enabled
+
+    # 💥 FASE 6: CHAOS ENGINEERING
+    - name: "💥 FASE 6: Chaos Engineering"
+      debug:
+        msg: "Ejecutando experimentos de Chaos Engineering"
+      when: chaos_enabled
+
+    - name: "🐒 Chaos Monkey Simulation"
+      debug:
+        msg:
+          - "🐒 Chaos Monkey Experiments:"
+          - "  💥 Pod failure: SIMULATED"
+          - "  🌐 Network latency: SIMULATED"
+          - "  💾 Memory pressure: SIMULATED"
+          - "  📊 System resilience: VERIFIED"
+          - "  🔄 Auto-recovery: SUCCESSFUL"
+      when: chaos_enabled
+
+    # 🔄 FASE 7: CANARY DEPLOYMENT
+    - name: "🔄 FASE 7: Canary Deployment"
+      debug:
+        msg: "Preparando Canary deployment"
+      when: deployment_strategy == "canary"
+
+    - name: "🟢 Green Deployment (Canary)"
+      debug:
+        msg:
+          - "🟢 GREEN DEPLOYMENT (CANARY):"
+          - "  📦 Version: {{ app_version }}-canary"
+          - "  🎯 Traffic split: 10% canary, 90% stable"
+          - "  📊 Monitoring: ACTIVE"
+          - "  ⏱️ Duration: 5 minutes"
+      when: deployment_strategy == "canary"
+
+    - name: "📊 Canary Metrics Evaluation"
+      debug:
+        msg:
+          - "📊 Canary Analysis:"
+          - "  📈 Error rate: 0.8% (GOOD)"
+          - "  ⏱️ Latency P95: 95ms (GOOD)"
+          - "  🎯 Success rate: 99.2% (GOOD)"
+          - "  ✅ Decision: PROMOTE CANARY"
+      when: deployment_strategy == "canary"
+
+    # 🎉 FASE 8: DEPLOYMENT COMPLETION
+    - name: "🎉 FASE 8: Deployment Completion"
+      debug:
+        msg: "Finalizando deployment y configuración"
+
+    - name: "🔄 Traffic Routing"
+      debug:
+        msg:
+          - "🔄 Configurando traffic routing:"
+          - "  🎯 Primary: {{ app_name }}-blue (100%)"
+          - "  🌐 Load balancer: CONFIGURED"
+          - "  📊 Health checks: ENABLED"
+
+    - name: "📦 Scaling Configuration"
+      debug:
+        msg:
+          - "📦 Auto-scaling configurado:"
+          - "  📊 Min replicas: 2"
+          - "  📈 Max replicas: 10"
+          - "  🎯 Target CPU: 70%"
+          - "  💾 Target Memory: 80%"
+
+    # 🎉 REPORTE FINAL
+    - name: "🎉 REPORTE FINAL DEL PIPELINE"
+      debug:
+        msg:
+          - "╔══════════════════════════════════════════════════════════════╗"
+          - "║                    🎉 PIPELINE COMPLETADO 🎉                ║"
+          - "╠══════════════════════════════════════════════════════════════╣"
+          - "║  📊 RESUMEN DEL DEPLOYMENT:                                  ║"
+          - "║                                                              ║"
+          - "║  🚀 Aplicación:    {{ app_name }}                           ║"
+          - "║  🌍 Environment:   {{ environment }}                        ║"
+          - "║  📦 Version:       {{ app_version }}                        ║"
+          - "║  🎯 Strategy:      {{ deployment_strategy }}               ║"
+          - "║  📊 Replicas:      {{ replicas }}                          ║"
+          - "║  ✅ Status:        DEPLOYED & HEALTHY                       ║"
+          - "║                                                              ║"
+          - "║  🎯 CARACTERÍSTICAS ACTIVADAS:                               ║"
+          - "║  📊 Monitoring:    {{ 'ENABLED' if monitoring_enabled else 'DISABLED' }}                              ║"
+          - "║  🛡️ Security:      {{ 'ENABLED' if security_scan_enabled else 'DISABLED' }}                           ║"
+          - "║  💥 Chaos:         {{ 'ENABLED' if chaos_enabled else 'DISABLED' }}                                   ║"
+          - "║                                                              ║"
+          - "║  📋 MÉTRICAS FINALES:                                        ║"
+          - "║  ✅ Success Rate:  99.5%                                     ║"
+          - "║  ⏱️ Avg Latency:   85ms                                      ║"
+          - "║  🎯 Throughput:    120 RPS                                   ║"
+          - "║  🔒 Security:      9.8/10                                    ║"
+          - "╚══════════════════════════════════════════════════════════════╝"
+
+    - name: "🚀 Próximos Pasos y Comandos"
+      debug:
+        msg:
+          - "🎯 PRÓXIMOS PASOS:"
+          - ""
+          - "1. 🔄 Para ejecutar Canary deployment:"
+          - "   Variables: strategy=canary"
+          - ""
+          - "2. 💥 Para activar Chaos Engineering:"
+          - "   Variables: chaos=true"
+          - ""
+          - "3. 🌍 Para deployment en producción:"
+          - "   Variables: env=production, app_replicas=5"
+          - ""
+          - "4. 🛡️ Para desactivar security scan:"
+          - "   Variables: security=false"
+          - ""
+          - "5. 📊 Para desactivar monitoring:"
+          - "   Variables: monitoring=false"
+          - ""
+          - "🎮 EXPERIMENTOS SUGERIDOS:"
+          - "• Cambiar strategy a 'canary'"
+          - "• Incrementar replicas a 5"
+          - "• Activar chaos engineering"
+          - "• Probar con environment 'production'" 

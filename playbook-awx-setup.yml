@@ -1,0 +1,168 @@
+---
+- name: "🔧 AWX Environment Setup - Preparación del entorno"
+  hosts: localhost
+  gather_facts: yes
+  become: false
+  vars:
+    kubectl_version: "v1.28.0"
+    kubectl_path: "/tmp/kubectl"
+
+  tasks:
+    - name: "🎭 Banner Setup AWX"
+      debug:
+        msg:
+          - "╔══════════════════════════════════════════════════════════════╗"
+          - "║                    🔧 AWX ENVIRONMENT SETUP 🔧               ║"
+          - "║                                                              ║"
+          - "║  Preparando entorno para ejecutar playbooks DevOps          ║"
+          - "║  Instalando kubectl y dependencias necesarias               ║"
+          - "╚══════════════════════════════════════════════════════════════╝"
+
+    - name: "📋 Verificar sistema operativo"
+      debug:
+        msg: 
+          - "Sistema: {{ ansible_system }}"
+          - "Arquitectura: {{ ansible_architecture }}"
+          - "Distribución: {{ ansible_distribution | default('Unknown') }}"
+
+    - name: "🔍 Verificar si kubectl ya existe"
+      stat:
+        path: "{{ kubectl_path }}"
+      register: kubectl_exists
+
+    - name: "📥 Descargar kubectl si no existe"
+      get_url:
+        url: "https://dl.k8s.io/release/{{ kubectl_version }}/bin/linux/amd64/kubectl"
+        dest: "{{ kubectl_path }}"
+        mode: '0755'
+        timeout: 30
+      when: not kubectl_exists.stat.exists
+      register: kubectl_download
+      ignore_errors: yes
+
+    - name: "🔧 Descargar kubectl alternativo (método 2)"
+      shell: |
+        curl -LO "https://dl.k8s.io/release/{{ kubectl_version }}/bin/linux/amd64/kubectl"
+        chmod +x kubectl
+        mv kubectl {{ kubectl_path }}
+      when: not kubectl_exists.stat.exists and kubectl_download is failed
+      ignore_errors: yes
+
+    - name: "✅ Verificar instalación kubectl"
+      shell: "{{ kubectl_path }} version --client --output=yaml"
+      register: kubectl_check
+      ignore_errors: yes
+
+    - name: "📊 Estado kubectl"
+      debug:
+        msg: "{{ kubectl_check.stdout if kubectl_check is succeeded else 'kubectl no disponible - modo simulación activado' }}"
+
+    - name: "🔍 Verificar conexión a Kubernetes"
+      shell: "{{ kubectl_path }} cluster-info"
+      register: k8s_connection
+      ignore_errors: yes
+
+    - name: "📊 Estado conexión Kubernetes"
+      debug:
+        msg: "{{ k8s_connection.stdout_lines if k8s_connection is succeeded else ['Kubernetes no accesible desde AWX', 'Se ejecutará en modo simulación'] }}"
+
+    - name: "📦 Instalar herramientas Python necesarias"
+      pip:
+        name:
+          - requests
+          - urllib3
+          - kubernetes
+        state: present
+      ignore_errors: yes
+
+    - name: "🎯 Crear directorio de trabajo"
+      file:
+        path: /tmp/awx-devops
+        state: directory
+        mode: '0755'
+
+    - name: "📝 Crear script de utilidades"
+      copy:
+        dest: "/tmp/awx-devops/utils.sh"
+        mode: '0755'
+        content: |
+          #!/bin/bash
+          
+          # Utilidades para AWX DevOps
+          KUBECTL_PATH="{{ kubectl_path }}"
+          
+          # Función para verificar kubectl
+          check_kubectl() {
+              if [ -f "$KUBECTL_PATH" ]; then
+                  echo "✅ kubectl disponible en $KUBECTL_PATH"
+                  return 0
+              else
+                  echo "❌ kubectl no disponible"
+                  return 1
+              fi
+          }
+          
+          # Función para verificar conexión k8s
+          check_k8s() {
+              if $KUBECTL_PATH cluster-info > /dev/null 2>&1; then
+                  echo "✅ Conexión a Kubernetes OK"
+                  return 0
+              else
+                  echo "❌ Sin conexión a Kubernetes"
+                  return 1
+              fi
+          }
+          
+          # Función simulación kubectl
+          simulate_kubectl() {
+              echo "🎭 MODO SIMULACIÓN - kubectl $@"
+              case "$1" in
+                  "create")
+                      echo "namespace/$3 created (simulated)"
+                      ;;
+                  "apply")
+                      echo "deployment.apps/test-app created (simulated)"
+                      echo "service/test-service created (simulated)"
+                      ;;
+                  "get")
+                      if [[ "$2" == "pods" ]]; then
+                          echo "NAME          READY   STATUS    RESTARTS   AGE"
+                          echo "test-pod-1    1/1     Running   0          30s"
+                          echo "test-pod-2    1/1     Running   0          30s"
+                      fi
+                      ;;
+                  *)
+                      echo "Command simulated successfully"
+                      ;;
+              esac
+          }
+
+    - name: "🎉 Reporte de Setup"
+      debug:
+        msg:
+          - "╔══════════════════════════════════════════════════════════════╗"
+          - "║                    🎉 SETUP COMPLETADO 🎉                   ║"
+          - "╠══════════════════════════════════════════════════════════════╣"
+          - "║  📊 ESTADO DEL ENTORNO:                                      ║"
+          - "║                                                              ║"
+          - "║  🔧 kubectl:       {{ 'DISPONIBLE' if kubectl_check is succeeded else 'NO DISPONIBLE' }}                             ║"
+          - "║  🌐 Kubernetes:    {{ 'CONECTADO' if k8s_connection is succeeded else 'NO CONECTADO' }}                              ║"
+          - "║  📍 kubectl path:  {{ kubectl_path }}                       ║"
+          - "║                                                              ║"
+          - "║  📋 SIGUIENTE PASO:                                          ║"
+          - "║  Ejecutar los playbooks DevOps con las variables correctas  ║"
+          - "╚══════════════════════════════════════════════════════════════╝"
+
+    - name: "🔧 Comandos de troubleshooting"
+      debug:
+        msg:
+          - "🛠️ TROUBLESHOOTING:"
+          - ""
+          - "# Verificar kubectl manual:"
+          - "{{ kubectl_path }} version --client"
+          - ""
+          - "# Verificar conexión k8s:"
+          - "{{ kubectl_path }} cluster-info"
+          - ""
+          - "# Ejecutar utilidades:"
+          - "bash /tmp/awx-devops/utils.sh" 

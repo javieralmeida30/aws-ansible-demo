@@ -25,10 +25,12 @@
     slack_enabled: false
     email_enabled: false
     
-    # 🎯 Namespaces
+    # 🎯 Namespaces y kubectl
     app_namespace: "{{ app_name }}-{{ environment }}"
     monitoring_namespace: "monitoring"
     security_namespace: "security"
+    kubectl_path: "/tmp/kubectl"
+    kubectl_available: false
 
   tasks:
     - name: "🎭 Banner Épico del Pipeline"
@@ -49,14 +51,33 @@
       debug:
         msg: "Iniciando preparación del entorno para {{ environment }}"
 
-    - name: "📦 Crear namespaces necesarios"
+    - name: "🔍 Verificar kubectl disponible"
+      stat:
+        path: "{{ kubectl_path }}"
+      register: kubectl_check
+      
+    - name: "⚙️ Configurar kubectl_available"
+      set_fact:
+        kubectl_available: "{{ kubectl_check.stat.exists }}"
+
+    - name: "📦 Crear namespaces necesarios (con kubectl)"
       shell: |
-        kubectl create namespace {{ item }} --dry-run=client -o yaml | kubectl apply -f -
+        {{ kubectl_path }} create namespace {{ item }} --dry-run=client -o yaml | {{ kubectl_path }} apply -f -
       loop:
         - "{{ app_namespace }}"
         - "{{ monitoring_namespace }}"
         - "{{ security_namespace }}"
       register: namespace_creation
+      when: kubectl_available
+
+    - name: "🎭 Simular creación de namespaces (sin kubectl)"
+      debug:
+        msg: "🎭 SIMULACIÓN: Creando namespace {{ item }}"
+      loop:
+        - "{{ app_namespace }}"
+        - "{{ monitoring_namespace }}"
+        - "{{ security_namespace }}"
+      when: not kubectl_available
 
     - name: "🏷️ Etiquetar namespaces"
       shell: |
