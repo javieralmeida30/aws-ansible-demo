@@ -1,0 +1,479 @@
+---
+- name: "🚀 Canary Deployment & Chaos Engineering - Nivel Jedi DevOps"
+  hosts: localhost
+  gather_facts: yes
+  vars:
+    app_name: "flask-monitoring-app"
+    environment: "{{ env | default('staging') }}"
+    app_namespace: "{{ app_name }}-{{ environment }}"
+    monitoring_namespace: "monitoring"
+    
+    # 🎯 Canary Configuration
+    canary_enabled: true
+    canary_percentage: "{{ canary_percent | default(10) }}"
+    canary_duration: "{{ duration | default('300') }}"  # 5 minutos
+    
+    # 💥 Chaos Engineering
+    chaos_enabled: "{{ chaos | default(false) }}"
+    chaos_scenarios:
+      - name: "pod-failure"
+        description: "Eliminar pods aleatoriamente"
+      - name: "network-latency"
+        description: "Introducir latencia de red"
+      - name: "resource-stress"
+        description: "Estrés de CPU y memoria"
+
+  tasks:
+    - name: "🎭 Banner Canary & Chaos"
+      debug:
+        msg:
+          - "╔══════════════════════════════════════════════════════════════╗"
+          - "║              🚀 CANARY DEPLOYMENT & CHAOS ENGINEERING        ║"
+          - "║                                                              ║"
+          - "║  🎯 Canary:        {{ 'ENABLED' if canary_enabled else 'DISABLED' }}  ║"
+          - "║  📊 Percentage:    {{ canary_percentage }}%                 ║"
+          - "║  ⏱️ Duration:       {{ canary_duration }}s                  ║"
+          - "║  💥 Chaos:         {{ 'ENABLED' if chaos_enabled else 'DISABLED' }}   ║"
+          - "╚══════════════════════════════════════════════════════════════╝"
+
+    # 🟢 FASE 1: CANARY DEPLOYMENT
+    - name: "🟢 FASE 1: Canary Deployment"
+      debug:
+        msg: "Iniciando Canary Deployment con {{ canary_percentage }}% de tráfico"
+      when: canary_enabled
+
+    - name: "🎯 Deployar versión GREEN (Canary)"
+      shell: |
+        cat <<EOF | kubectl apply -f -
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata:
+          name: {{ app_name }}-green
+          namespace: {{ app_namespace }}
+          labels:
+            app: {{ app_name }}
+            version: green
+            deployment-type: canary
+        spec:
+          replicas: 1
+          selector:
+            matchLabels:
+              app: {{ app_name }}
+              version: green
+          template:
+            metadata:
+              labels:
+                app: {{ app_name }}
+                version: green
+            spec:
+              containers:
+              - name: {{ app_name }}
+                image: python:3.11-slim
+                command: ["python", "-c"]
+                args:
+                  - |
+                    import subprocess
+                    import sys
+                    subprocess.check_call([sys.executable, "-m", "pip", "install", "flask", "prometheus-client"])
+                    
+                    from flask import Flask, jsonify
+                    from prometheus_client import Counter, Histogram, generate_latest
+                    import time
+                    import os
+                    import random
+                    
+                    app = Flask(__name__)
+                    REQUEST_COUNT = Counter('http_requests_total', 'Total requests', ['endpoint', 'version'])
+                    REQUEST_LATENCY = Histogram('http_request_duration_seconds', 'Request latency', ['version'])
+                    
+                    @app.route('/')
+                    def home():
+                        REQUEST_COUNT.labels(endpoint='/', version='green').inc()
+                        with REQUEST_LATENCY.labels(version='green').time():
+                            return jsonify({
+                                'message': '🟢 {{ app_name }} - GREEN VERSION (CANARY)',
+                                'version': 'green-v2.0.0',
+                                'environment': '{{ environment }}',
+                                'timestamp': time.time(),
+                                'deployment_strategy': 'canary',
+                                'features': ['new-ui', 'performance-boost', 'advanced-metrics']
+                            })
+                    
+                    @app.route('/health')
+                    def health():
+                        REQUEST_COUNT.labels(endpoint='/health', version='green').inc()
+                        return jsonify({'status': 'healthy', 'version': 'green'})
+                    
+                    @app.route('/metrics')
+                    def metrics():
+                        return generate_latest()
+                    
+                    @app.route('/version')
+                    def version():
+                        REQUEST_COUNT.labels(endpoint='/version', version='green').inc()
+                        return jsonify({
+                            'version': 'green-v2.0.0',
+                            'build': 'canary-{{ ansible_date_time.epoch }}',
+                            'features': ['new-ui', 'performance-boost']
+                        })
+                    
+                    app.run(host='0.0.0.0', port=5000)
+                ports:
+                - containerPort: 5000
+                env:
+                - name: APP_VERSION
+                  value: "green-v2.0.0"
+                - name: ENVIRONMENT
+                  value: "{{ environment }}"
+                resources:
+                  requests:
+                    memory: "128Mi"
+                    cpu: "100m"
+                  limits:
+                    memory: "256Mi"
+                    cpu: "200m"
+                livenessProbe:
+                  httpGet:
+                    path: /health
+                    port: 5000
+                  initialDelaySeconds: 30
+                  periodSeconds: 10
+                readinessProbe:
+                  httpGet:
+                    path: /health
+                    port: 5000
+                  initialDelaySeconds: 5
+                  periodSeconds: 5
+        EOF
+      when: canary_enabled
+
+    - name: "⚖️ Crear Service con Weight-based Routing"
+      shell: |
+        cat <<EOF | kubectl apply -f -
+        apiVersion: v1
+        kind: Service
+        metadata:
+          name: {{ app_name }}-canary-service
+          namespace: {{ app_namespace }}
+          labels:
+            app: {{ app_name }}
+            service-type: canary
+        spec:
+          selector:
+            app: {{ app_name }}
+            version: green
+          ports:
+          - name: http
+            port: 80
+            targetPort: 5000
+            nodePort: 30082
+          type: NodePort
+        EOF
+      when: canary_enabled
+
+    - name: "🎭 Crear Nginx Ingress para Traffic Splitting"
+      shell: |
+        cat <<EOF | kubectl apply -f -
+        apiVersion: networking.k8s.io/v1
+        kind: Ingress
+        metadata:
+          name: {{ app_name }}-canary-ingress
+          namespace: {{ app_namespace }}
+          annotations:
+            nginx.ingress.kubernetes.io/canary: "true"
+            nginx.ingress.kubernetes.io/canary-weight: "{{ canary_percentage }}"
+            nginx.ingress.kubernetes.io/canary-by-header: "X-Canary"
+            nginx.ingress.kubernetes.io/canary-by-header-value: "always"
+        spec:
+          rules:
+          - host: {{ app_name }}.local
+            http:
+              paths:
+              - path: /
+                pathType: Prefix
+                backend:
+                  service:
+                    name: {{ app_name }}-canary-service
+                    port:
+                      number: 80
+        EOF
+      when: canary_enabled
+
+    - name: "⏳ Esperar despliegue Canary"
+      shell: kubectl wait --for=condition=Available deployment/{{ app_name }}-green -n {{ app_namespace }} --timeout=300s
+      when: canary_enabled
+
+    # 📊 FASE 2: MONITORING CANARY
+    - name: "📊 FASE 2: Monitoring Canary"
+      debug:
+        msg: "Monitoreando métricas de Canary deployment"
+      when: canary_enabled
+
+    - name: "🧪 Testing Canary Performance"
+      shell: |
+        echo "🧪 Testing Canary deployment..."
+        
+        # Test Blue version
+        echo "Testing BLUE version (stable):"
+        for i in {1..5}; do
+          curl -s http://localhost:30081/ | jq -r '.version // "No version"'
+        done
+        
+        echo ""
+        echo "Testing GREEN version (canary):"
+        for i in {1..5}; do
+          curl -s http://localhost:30082/ | jq -r '.version // "No version"'
+        done
+        
+        echo ""
+        echo "✅ Canary testing completado"
+      register: canary_test_results
+      when: canary_enabled
+
+    - name: "📈 Métricas de Canary"
+      uri:
+        url: "http://localhost:30082/metrics"
+        method: GET
+      register: canary_metrics
+      when: canary_enabled
+
+    # 💥 FASE 3: CHAOS ENGINEERING
+    - name: "💥 FASE 3: Chaos Engineering"
+      debug:
+        msg: "Iniciando experimentos de Chaos Engineering"
+      when: chaos_enabled
+
+    - name: "🎯 Crear Chaos Monkey Pod"
+      shell: |
+        cat <<EOF | kubectl apply -f -
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata:
+          name: chaos-monkey
+          namespace: {{ app_namespace }}
+          labels:
+            app: chaos-monkey
+        spec:
+          replicas: 1
+          selector:
+            matchLabels:
+              app: chaos-monkey
+          template:
+            metadata:
+              labels:
+                app: chaos-monkey
+            spec:
+              serviceAccountName: chaos-monkey
+              containers:
+              - name: chaos-monkey
+                image: python:3.11-slim
+                command: ["python", "-c"]
+                args:
+                  - |
+                    import subprocess
+                    import sys
+                    import time
+                    import random
+                    import json
+                    
+                    subprocess.check_call([sys.executable, "-m", "pip", "install", "kubernetes"])
+                    
+                    from kubernetes import client, config
+                    
+                    print("🐒 Chaos Monkey iniciado!")
+                    
+                    # Configurar cliente de Kubernetes
+                    config.load_incluster_config()
+                    v1 = client.CoreV1Api()
+                    apps_v1 = client.AppsV1Api()
+                    
+                    namespace = "{{ app_namespace }}"
+                    
+                    def chaos_pod_killer():
+                        print("💥 Ejecutando Pod Killer...")
+                        pods = v1.list_namespaced_pod(namespace=namespace, label_selector="app={{ app_name }}")
+                        if pods.items:
+                            target_pod = random.choice(pods.items)
+                            print(f"🎯 Eliminando pod: {target_pod.metadata.name}")
+                            v1.delete_namespaced_pod(name=target_pod.metadata.name, namespace=namespace)
+                            return f"Eliminado pod: {target_pod.metadata.name}"
+                        return "No hay pods para eliminar"
+                    
+                    def chaos_resource_stress():
+                        print("🔥 Simulando estrés de recursos...")
+                        # Simular carga de CPU
+                        for i in range(1000000):
+                            _ = i * i
+                        return "Estrés de recursos completado"
+                    
+                    # Loop principal de Chaos
+                    chaos_scenarios = [chaos_pod_killer, chaos_resource_stress]
+                    
+                    while True:
+                        scenario = random.choice(chaos_scenarios)
+                        try:
+                            result = scenario()
+                            print(f"✅ Chaos ejecutado: {result}")
+                        except Exception as e:
+                            print(f"❌ Error en Chaos: {e}")
+                        
+                        # Esperar entre 30-120 segundos
+                        wait_time = random.randint(30, 120)
+                        print(f"⏱️ Esperando {wait_time} segundos...")
+                        time.sleep(wait_time)
+                env:
+                - name: CHAOS_NAMESPACE
+                  value: "{{ app_namespace }}"
+                resources:
+                  requests:
+                    memory: "64Mi"
+                    cpu: "50m"
+                  limits:
+                    memory: "128Mi"
+                    cpu: "100m"
+        EOF
+      when: chaos_enabled
+
+    - name: "🔑 Crear ServiceAccount para Chaos Monkey"
+      shell: |
+        cat <<EOF | kubectl apply -f -
+        apiVersion: v1
+        kind: ServiceAccount
+        metadata:
+          name: chaos-monkey
+          namespace: {{ app_namespace }}
+        ---
+        apiVersion: rbac.authorization.k8s.io/v1
+        kind: Role
+        metadata:
+          namespace: {{ app_namespace }}
+          name: chaos-monkey-role
+        rules:
+        - apiGroups: [""]
+          resources: ["pods"]
+          verbs: ["get", "list", "delete"]
+        - apiGroups: ["apps"]
+          resources: ["deployments", "replicasets"]
+          verbs: ["get", "list", "patch"]
+        ---
+        apiVersion: rbac.authorization.k8s.io/v1
+        kind: RoleBinding
+        metadata:
+          name: chaos-monkey-binding
+          namespace: {{ app_namespace }}
+        subjects:
+        - kind: ServiceAccount
+          name: chaos-monkey
+          namespace: {{ app_namespace }}
+        roleRef:
+          kind: Role
+          name: chaos-monkey-role
+          apiGroup: rbac.authorization.k8s.io
+        EOF
+      when: chaos_enabled
+
+    # 🔄 FASE 4: CANARY PROMOTION/ROLLBACK
+    - name: "🔄 FASE 4: Canary Decision"
+      debug:
+        msg: "Evaluando si promover o hacer rollback del Canary"
+      when: canary_enabled
+
+    - name: "📊 Simular evaluación de métricas"
+      shell: |
+        echo "📊 Evaluando métricas de Canary..."
+        
+        # Simular métricas
+        error_rate=$(( RANDOM % 5 ))
+        latency_p95=$(( 100 + RANDOM % 200 ))
+        
+        echo "Error Rate: ${error_rate}%"
+        echo "Latency P95: ${latency_p95}ms"
+        
+        if [ $error_rate -lt 3 ] && [ $latency_p95 -lt 250 ]; then
+          echo "✅ MÉTRICAS SALUDABLES - CANARY PUEDE SER PROMOVIDO"
+          echo "promote" > /tmp/canary_decision
+        else
+          echo "❌ MÉTRICAS DEGRADADAS - INICIANDO ROLLBACK"
+          echo "rollback" > /tmp/canary_decision
+        fi
+      register: metrics_evaluation
+      when: canary_enabled
+
+    - name: "📋 Resultado de evaluación"
+      debug:
+        msg: "{{ metrics_evaluation.stdout_lines }}"
+      when: canary_enabled
+
+    - name: "🎉 Promover Canary a Producción"
+      shell: |
+        echo "🎉 Promoviendo Canary a producción..."
+        
+        # Actualizar service principal para apuntar a GREEN
+        kubectl patch service {{ app_name }}-service -n {{ app_namespace }} -p '{"spec":{"selector":{"version":"green"}}}'
+        
+        # Escalar GREEN deployment
+        kubectl scale deployment {{ app_name }}-green --replicas=3 -n {{ app_namespace }}
+        
+        # Eliminar BLUE deployment después de un tiempo
+        echo "🗑️ Programando eliminación de BLUE deployment..."
+        (sleep 60 && kubectl delete deployment {{ app_name }}-blue -n {{ app_namespace }}) &
+        
+        echo "✅ Canary promovido exitosamente!"
+      when: canary_enabled and "promote" in lookup('file', '/tmp/canary_decision', errors='ignore')
+
+    - name: "🔄 Rollback Canary"
+      shell: |
+        echo "🔄 Ejecutando rollback de Canary..."
+        
+        # Eliminar GREEN deployment
+        kubectl delete deployment {{ app_name }}-green -n {{ app_namespace }}
+        
+        # Asegurar que BLUE está escalado correctamente
+        kubectl scale deployment {{ app_name }}-blue --replicas=3 -n {{ app_namespace }}
+        
+        echo "✅ Rollback completado - BLUE version restaurada"
+      when: canary_enabled and "rollback" in lookup('file', '/tmp/canary_decision', errors='ignore')
+
+    # 📊 FASE 5: REPORTE FINAL
+    - name: "📊 FASE 5: Reporte Final"
+      debug:
+        msg:
+          - "╔══════════════════════════════════════════════════════════════╗"
+          - "║                🎉 CANARY & CHAOS COMPLETADO 🎉              ║"
+          - "╠══════════════════════════════════════════════════════════════╣"
+          - "║  📊 RESUMEN:                                                 ║"
+          - "║                                                              ║"
+          - "║  🎯 Canary Status: {{ 'COMPLETED' if canary_enabled else 'SKIPPED' }}  ║"
+          - "║  💥 Chaos Status:  {{ 'RUNNING' if chaos_enabled else 'DISABLED' }}    ║"
+          - "║                                                              ║"
+          - "║  🔗 ACCESOS:                                                 ║"
+          - "║  🔵 Blue (Stable):  http://localhost:30081                  ║"
+          - "║  🟢 Green (Canary): http://localhost:30082                  ║"
+          - "║  📊 Prometheus:     http://localhost:30090                  ║"
+          - "║                                                              ║"
+          - "║  🧪 EXPERIMENTOS DISPONIBLES:                                ║"
+          - "║  1. Cambiar porcentaje de Canary                             ║"
+          - "║  2. Activar diferentes escenarios de Chaos                   ║"
+          - "║  3. Implementar A/B testing                                  ║"
+          - "║  4. Configurar Feature Flags                                 ║"
+          - "╚══════════════════════════════════════════════════════════════╝"
+
+    - name: "🔧 Comandos avanzados"
+      debug:
+        msg:
+          - "🎯 COMANDOS AVANZADOS:"
+          - ""
+          - "# Monitorear Canary deployment:"
+          - "kubectl get pods -n {{ app_namespace }} -l version=green -w"
+          - ""
+          - "# Ver logs de Chaos Monkey:"
+          - "kubectl logs -f deployment/chaos-monkey -n {{ app_namespace }}"
+          - ""
+          - "# Cambiar porcentaje de Canary:"
+          - "ansible-playbook playbook-canary-chaos.yml -e canary_percent=25"
+          - ""
+          - "# Activar Chaos Engineering:"
+          - "ansible-playbook playbook-canary-chaos.yml -e chaos=true"
+          - ""
+          - "# Rollback manual:"
+          - "kubectl patch service {{ app_name }}-service -n {{ app_namespace }} -p '{\"spec\":{\"selector\":{\"version\":\"blue\"}}}'" 

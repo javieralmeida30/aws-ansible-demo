@@ -1,0 +1,512 @@
+---
+- name: "🚀 DevOps Pipeline Master - El Pipeline más Zarpado del Universo"
+  hosts: localhost
+  gather_facts: yes
+  vars:
+    # 🎨 Configuración del Pipeline
+    pipeline_name: "devops-pipeline-master"
+    environment: "{{ env | default('staging') }}"
+    deployment_strategy: "{{ strategy | default('blue-green') }}"
+    
+    # 🏗️ Aplicación Demo
+    app_name: "flask-monitoring-app"
+    app_image: "{{ app_name }}:{{ ansible_date_time.epoch }}"
+    
+    # 📊 Observabilidad
+    monitoring_stack: true
+    logging_enabled: true
+    tracing_enabled: true
+    
+    # 🛡️ Security
+    security_scan: true
+    compliance_check: true
+    
+    # 🔔 Notificaciones
+    slack_enabled: false
+    email_enabled: false
+    
+    # 🎯 Namespaces
+    app_namespace: "{{ app_name }}-{{ environment }}"
+    monitoring_namespace: "monitoring"
+    security_namespace: "security"
+
+  tasks:
+    - name: "🎭 Banner Épico del Pipeline"
+      debug:
+        msg:
+          - "╔══════════════════════════════════════════════════════════════╗"
+          - "║                    🚀 DEVOPS PIPELINE MASTER 🚀              ║"
+          - "║                                                              ║"
+          - "║  Pipeline:     {{ pipeline_name }}                          ║"
+          - "║  Environment:  {{ environment }}                            ║"
+          - "║  Strategy:     {{ deployment_strategy }}                    ║"
+          - "║  App:          {{ app_name }}                               ║"
+          - "║  Timestamp:    {{ ansible_date_time.iso8601 }}              ║"
+          - "╚══════════════════════════════════════════════════════════════╝"
+
+    # 🏗️ FASE 1: PREPARACIÓN DEL ENTORNO
+    - name: "🏗️ FASE 1: Preparación del Entorno"
+      debug:
+        msg: "Iniciando preparación del entorno para {{ environment }}"
+
+    - name: "📦 Crear namespaces necesarios"
+      shell: |
+        kubectl create namespace {{ item }} --dry-run=client -o yaml | kubectl apply -f -
+      loop:
+        - "{{ app_namespace }}"
+        - "{{ monitoring_namespace }}"
+        - "{{ security_namespace }}"
+      register: namespace_creation
+
+    - name: "🏷️ Etiquetar namespaces"
+      shell: |
+        kubectl label namespace {{ item }} \
+          pipeline={{ pipeline_name }} \
+          environment={{ environment }} \
+          managed-by=awx \
+          --overwrite
+      loop:
+        - "{{ app_namespace }}"
+        - "{{ monitoring_namespace }}"
+        - "{{ security_namespace }}"
+
+    # 🔨 FASE 2: BUILD & SECURITY SCAN
+    - name: "🔨 FASE 2: Build & Security Scan"
+      debug:
+        msg: "Iniciando build y security scanning"
+
+    - name: "🏗️ Crear aplicación Flask demo"
+      copy:
+        dest: "/tmp/app.py"
+        content: |
+          from flask import Flask, jsonify, request
+          from prometheus_client import Counter, Histogram, generate_latest
+          import time
+          import random
+          import logging
+          import os
+          
+          app = Flask(__name__)
+          
+          # Métricas Prometheus
+          REQUEST_COUNT = Counter('http_requests_total', 'Total HTTP requests', ['method', 'endpoint'])
+          REQUEST_LATENCY = Histogram('http_request_duration_seconds', 'HTTP request latency')
+          
+          # Logging estructurado
+          logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
+          
+          @app.route('/')
+          def home():
+              REQUEST_COUNT.labels(method='GET', endpoint='/').inc()
+              with REQUEST_LATENCY.time():
+                  return jsonify({
+                      'message': '🚀 DevOps Pipeline Master App',
+                      'version': os.environ.get('APP_VERSION', '1.0.0'),
+                      'environment': os.environ.get('ENVIRONMENT', 'staging'),
+                      'timestamp': time.time()
+                  })
+          
+          @app.route('/health')
+          def health():
+              REQUEST_COUNT.labels(method='GET', endpoint='/health').inc()
+              return jsonify({'status': 'healthy', 'timestamp': time.time()})
+          
+          @app.route('/metrics')
+          def metrics():
+              return generate_latest()
+          
+          @app.route('/load-test')
+          def load_test():
+              REQUEST_COUNT.labels(method='GET', endpoint='/load-test').inc()
+              # Simular carga variable
+              time.sleep(random.uniform(0.1, 0.5))
+              return jsonify({'message': 'Load test endpoint', 'delay': time.time()})
+          
+          @app.route('/error-test')
+          def error_test():
+              REQUEST_COUNT.labels(method='GET', endpoint='/error-test').inc()
+              if random.random() < 0.3:  # 30% de probabilidad de error
+                  return jsonify({'error': 'Simulated error'}), 500
+              return jsonify({'message': 'Success'})
+          
+          if __name__ == '__main__':
+              app.run(host='0.0.0.0', port=5000, debug=False)
+
+    - name: "🐳 Crear Dockerfile optimizado"
+      copy:
+        dest: "/tmp/Dockerfile"
+        content: |
+          FROM python:3.11-slim
+          
+          # Información de la imagen
+          LABEL maintainer="DevOps Team"
+          LABEL version="1.0.0"
+          LABEL description="Flask Monitoring App para Pipeline DevOps"
+          
+          # Crear usuario no-root para security
+          RUN useradd -m -u 1000 appuser
+          
+          WORKDIR /app
+          
+          # Instalar dependencias
+          COPY requirements.txt .
+          RUN pip install --no-cache-dir -r requirements.txt
+          
+          # Copiar aplicación
+          COPY app.py .
+          
+          # Cambiar a usuario no-root
+          USER appuser
+          
+          # Health check
+          HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+            CMD curl -f http://localhost:5000/health || exit 1
+          
+          EXPOSE 5000
+          
+          CMD ["python", "app.py"]
+
+    - name: "📋 Crear requirements.txt"
+      copy:
+        dest: "/tmp/requirements.txt"
+        content: |
+          Flask==2.3.3
+          prometheus-client==0.17.1
+          requests==2.31.0
+
+    # 🛡️ FASE 3: SECURITY & COMPLIANCE
+    - name: "🛡️ FASE 3: Security & Compliance"
+      debug:
+        msg: "Ejecutando security scanning y compliance checks"
+      when: security_scan
+
+    - name: "🔍 Security Scan Simulado"
+      shell: |
+        echo "🔍 Ejecutando security scan..."
+        echo "✅ Dockerfile security check: PASSED"
+        echo "✅ Dependency vulnerability scan: PASSED"
+        echo "✅ Static code analysis: PASSED"
+        echo "✅ Container image scan: PASSED"
+      register: security_results
+      when: security_scan
+
+    - name: "📊 Resultados Security Scan"
+      debug:
+        msg: "{{ security_results.stdout_lines }}"
+      when: security_scan
+
+    # 🚀 FASE 4: DEPLOYMENT
+    - name: "🚀 FASE 4: Deployment con {{ deployment_strategy }}"
+      debug:
+        msg: "Iniciando deployment usando estrategia {{ deployment_strategy }}"
+
+    - name: "🎯 Deployar aplicación con Blue-Green"
+      shell: |
+        cat <<EOF | kubectl apply -f -
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata:
+          name: {{ app_name }}-blue
+          namespace: {{ app_namespace }}
+          labels:
+            app: {{ app_name }}
+            version: blue
+            pipeline: {{ pipeline_name }}
+        spec:
+          replicas: 2
+          selector:
+            matchLabels:
+              app: {{ app_name }}
+              version: blue
+          template:
+            metadata:
+              labels:
+                app: {{ app_name }}
+                version: blue
+            spec:
+              containers:
+              - name: {{ app_name }}
+                image: python:3.11-slim
+                command: ["python", "-c"]
+                args:
+                  - |
+                    import subprocess
+                    import sys
+                    subprocess.check_call([sys.executable, "-m", "pip", "install", "flask", "prometheus-client"])
+                    
+                    from flask import Flask, jsonify
+                    from prometheus_client import Counter, generate_latest
+                    import time
+                    import os
+                    
+                    app = Flask(__name__)
+                    REQUEST_COUNT = Counter('http_requests_total', 'Total requests', ['endpoint'])
+                    
+                    @app.route('/')
+                    def home():
+                        REQUEST_COUNT.labels(endpoint='/').inc()
+                        return jsonify({
+                            'message': '🚀 {{ app_name }} - BLUE VERSION',
+                            'version': 'blue-v1.0.0',
+                            'environment': '{{ environment }}',
+                            'timestamp': time.time(),
+                            'deployment_strategy': '{{ deployment_strategy }}'
+                        })
+                    
+                    @app.route('/health')
+                    def health():
+                        return jsonify({'status': 'healthy', 'version': 'blue'})
+                    
+                    @app.route('/metrics')
+                    def metrics():
+                        return generate_latest()
+                    
+                    app.run(host='0.0.0.0', port=5000)
+                ports:
+                - containerPort: 5000
+                env:
+                - name: APP_VERSION
+                  value: "blue-v1.0.0"
+                - name: ENVIRONMENT
+                  value: "{{ environment }}"
+                resources:
+                  requests:
+                    memory: "128Mi"
+                    cpu: "100m"
+                  limits:
+                    memory: "256Mi"
+                    cpu: "200m"
+                livenessProbe:
+                  httpGet:
+                    path: /health
+                    port: 5000
+                  initialDelaySeconds: 30
+                  periodSeconds: 10
+                readinessProbe:
+                  httpGet:
+                    path: /health
+                    port: 5000
+                  initialDelaySeconds: 5
+                  periodSeconds: 5
+        EOF
+      when: deployment_strategy == "blue-green"
+
+    - name: "🌐 Crear Service para la aplicación"
+      shell: |
+        cat <<EOF | kubectl apply -f -
+        apiVersion: v1
+        kind: Service
+        metadata:
+          name: {{ app_name }}-service
+          namespace: {{ app_namespace }}
+          labels:
+            app: {{ app_name }}
+        spec:
+          selector:
+            app: {{ app_name }}
+            version: blue
+          ports:
+          - name: http
+            port: 80
+            targetPort: 5000
+          type: ClusterIP
+        EOF
+
+    - name: "🌍 Crear NodePort para acceso externo"
+      shell: |
+        cat <<EOF | kubectl apply -f -
+        apiVersion: v1
+        kind: Service
+        metadata:
+          name: {{ app_name }}-nodeport
+          namespace: {{ app_namespace }}
+          labels:
+            app: {{ app_name }}
+        spec:
+          selector:
+            app: {{ app_name }}
+            version: blue
+          ports:
+          - name: http
+            port: 80
+            targetPort: 5000
+            nodePort: 30081
+          type: NodePort
+        EOF
+
+    # 📊 FASE 5: MONITORING & OBSERVABILIDAD
+    - name: "📊 FASE 5: Monitoring & Observabilidad"
+      debug:
+        msg: "Configurando stack de observabilidad completo"
+      when: monitoring_stack
+
+    - name: "🔥 Deployar Prometheus"
+      shell: |
+        cat <<EOF | kubectl apply -f -
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata:
+          name: prometheus
+          namespace: {{ monitoring_namespace }}
+        spec:
+          replicas: 1
+          selector:
+            matchLabels:
+              app: prometheus
+          template:
+            metadata:
+              labels:
+                app: prometheus
+            spec:
+              containers:
+              - name: prometheus
+                image: prom/prometheus:latest
+                args:
+                  - '--config.file=/etc/prometheus/prometheus.yml'
+                  - '--storage.tsdb.path=/prometheus/'
+                  - '--web.console.libraries=/etc/prometheus/console_libraries'
+                  - '--web.console.templates=/etc/prometheus/consoles'
+                  - '--storage.tsdb.retention.time=200h'
+                  - '--web.enable-lifecycle'
+                ports:
+                - containerPort: 9090
+                volumeMounts:
+                - name: prometheus-config
+                  mountPath: /etc/prometheus/
+                resources:
+                  requests:
+                    memory: "512Mi"
+                    cpu: "250m"
+                  limits:
+                    memory: "1Gi"
+                    cpu: "500m"
+              volumes:
+              - name: prometheus-config
+                configMap:
+                  name: prometheus-config
+        ---
+        apiVersion: v1
+        kind: ConfigMap
+        metadata:
+          name: prometheus-config
+          namespace: {{ monitoring_namespace }}
+        data:
+          prometheus.yml: |
+            global:
+              scrape_interval: 15s
+            scrape_configs:
+            - job_name: 'prometheus'
+              static_configs:
+              - targets: ['localhost:9090']
+            - job_name: '{{ app_name }}'
+              kubernetes_sd_configs:
+              - role: pod
+                namespaces:
+                  names:
+                  - {{ app_namespace }}
+              relabel_configs:
+              - source_labels: [__meta_kubernetes_pod_label_app]
+                action: keep
+                regex: {{ app_name }}
+              - source_labels: [__meta_kubernetes_pod_container_port_number]
+                action: keep
+                regex: 5000
+        ---
+        apiVersion: v1
+        kind: Service
+        metadata:
+          name: prometheus-service
+          namespace: {{ monitoring_namespace }}
+        spec:
+          selector:
+            app: prometheus
+          ports:
+          - name: http
+            port: 9090
+            targetPort: 9090
+            nodePort: 30090
+          type: NodePort
+        EOF
+      when: monitoring_stack
+
+    # 🧪 FASE 6: TESTING AUTOMATIZADO
+    - name: "🧪 FASE 6: Testing Automatizado"
+      debug:
+        msg: "Ejecutando batería de tests automatizados"
+
+    - name: "⏳ Esperar a que la aplicación esté lista"
+      shell: kubectl wait --for=condition=Available deployment/{{ app_name }}-blue -n {{ app_namespace }} --timeout=300s
+      register: deployment_ready
+
+    - name: "🏥 Health Check"
+      uri:
+        url: "http://localhost:30081/health"
+        method: GET
+        timeout: 10
+      register: health_check
+      retries: 5
+      delay: 10
+      until: health_check.status == 200
+
+    - name: "🧪 Load Testing"
+      shell: |
+        echo "🧪 Ejecutando load testing..."
+        for i in {1..10}; do
+          curl -s http://localhost:30081/ > /dev/null
+          curl -s http://localhost:30081/load-test > /dev/null
+        done
+        echo "✅ Load testing completado"
+      register: load_test_results
+
+    - name: "📈 Verificar métricas"
+      uri:
+        url: "http://localhost:30081/metrics"
+        method: GET
+      register: metrics_check
+
+    # 🎉 FASE 7: REPORTE FINAL
+    - name: "🎉 FASE 7: Reporte Final del Pipeline"
+      debug:
+        msg:
+          - "╔══════════════════════════════════════════════════════════════╗"
+          - "║                    🎉 PIPELINE COMPLETADO 🎉                ║"
+          - "╠══════════════════════════════════════════════════════════════╣"
+          - "║  📊 RESUMEN DEL DEPLOYMENT:                                  ║"
+          - "║                                                              ║"
+          - "║  🚀 Aplicación:    {{ app_name }}                           ║"
+          - "║  🌍 Environment:   {{ environment }}                        ║"
+          - "║  📦 Strategy:      {{ deployment_strategy }}               ║"
+          - "║  ✅ Status:        DEPLOYED & HEALTHY                       ║"
+          - "║                                                              ║"
+          - "║  🔗 ACCESOS:                                                 ║"
+          - "║  🌐 App URL:       http://localhost:30081                   ║"
+          - "║  📊 Prometheus:    http://localhost:30090                   ║"
+          - "║  🏥 Health:        http://localhost:30081/health            ║"
+          - "║  📈 Metrics:       http://localhost:30081/metrics           ║"
+          - "║                                                              ║"
+          - "║  🎯 PRÓXIMOS PASOS:                                          ║"
+          - "║  1. Configurar alertas en Prometheus                        ║"
+          - "║  2. Implementar Green deployment                             ║"
+          - "║  3. Configurar GitOps con ArgoCD                             ║"
+          - "║  4. Añadir más tests automatizados                           ║"
+          - "╚══════════════════════════════════════════════════════════════╝"
+
+    - name: "📋 Comandos útiles para monitoreo"
+      debug:
+        msg:
+          - "🔧 COMANDOS ÚTILES:"
+          - ""
+          - "# Ver pods de la aplicación:"
+          - "kubectl get pods -n {{ app_namespace }} -w"
+          - ""
+          - "# Ver logs de la aplicación:"
+          - "kubectl logs -f deployment/{{ app_name }}-blue -n {{ app_namespace }}"
+          - ""
+          - "# Ver métricas de Prometheus:"
+          - "kubectl port-forward svc/prometheus-service 9090:9090 -n {{ monitoring_namespace }}"
+          - ""
+          - "# Escalar la aplicación:"
+          - "kubectl scale deployment {{ app_name }}-blue --replicas=3 -n {{ app_namespace }}"
+          - ""
+          - "# Hacer rollback:"
+          - "kubectl rollout undo deployment/{{ app_name }}-blue -n {{ app_namespace }}" 

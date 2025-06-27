@@ -1,0 +1,672 @@
+---
+- name: "🔄 GitOps Dashboard & ArgoCD - DevOps Automation Supreme"
+  hosts: localhost
+  gather_facts: yes
+  vars:
+    # 🎯 ArgoCD Configuration
+    argocd_namespace: "argocd"
+    argocd_version: "v2.9.3"
+    
+    # 📊 Dashboard Configuration
+    grafana_enabled: true
+    grafana_namespace: "monitoring"
+    
+    # 🎨 Application Configuration
+    app_name: "flask-monitoring-app"
+    environment: "{{ env | default('staging') }}"
+    app_namespace: "{{ app_name }}-{{ environment }}"
+    
+    # 🔗 Git Repository (simulado)
+    git_repo: "https://github.com/example/devops-manifests"
+    git_branch: "main"
+
+  tasks:
+    - name: "🎭 Banner GitOps & Dashboard"
+      debug:
+        msg:
+          - "╔══════════════════════════════════════════════════════════════╗"
+          - "║              🔄 GITOPS & DASHBOARD SUPREME 🔄                ║"
+          - "║                                                              ║"
+          - "║  🎯 ArgoCD:      ENABLING                                    ║"
+          - "║  📊 Grafana:     {{ 'ENABLED' if grafana_enabled else 'DISABLED' }}    ║"
+          - "║  🏭 Environment: {{ environment }}                          ║"
+          - "║  📦 Version:     {{ argocd_version }}                       ║"
+          - "╚══════════════════════════════════════════════════════════════╝"
+
+    # 🏗️ FASE 1: ARGOCD INSTALLATION
+    - name: "🏗️ FASE 1: ArgoCD Installation"
+      debug:
+        msg: "Instalando ArgoCD para GitOps workflow"
+
+    - name: "📦 Crear namespace ArgoCD"
+      shell: |
+        kubectl create namespace {{ argocd_namespace }} --dry-run=client -o yaml | kubectl apply -f -
+        kubectl label namespace {{ argocd_namespace }} app=argocd --overwrite
+
+    - name: "🚀 Instalar ArgoCD"
+      shell: |
+        kubectl apply -n {{ argocd_namespace }} -f https://raw.githubusercontent.com/argoproj/argo-cd/{{ argocd_version }}/manifests/install.yaml
+      register: argocd_install
+
+    - name: "⏳ Esperar a que ArgoCD esté listo"
+      shell: |
+        kubectl wait --for=condition=Available deployment/argocd-server -n {{ argocd_namespace }} --timeout=300s
+        kubectl wait --for=condition=Available deployment/argocd-repo-server -n {{ argocd_namespace }} --timeout=300s
+        kubectl wait --for=condition=Available deployment/argocd-dex-server -n {{ argocd_namespace }} --timeout=300s
+
+    - name: "🌐 Configurar acceso a ArgoCD UI"
+      shell: |
+        kubectl patch svc argocd-server -n {{ argocd_namespace }} -p '{"spec": {"type": "NodePort", "ports": [{"name": "https", "port": 443, "protocol": "TCP", "targetPort": 8080, "nodePort": 30443}]}}'
+
+    - name: "🔑 Obtener contraseña inicial de ArgoCD"
+      shell: |
+        kubectl -n {{ argocd_namespace }} get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d
+      register: argocd_password
+      ignore_errors: yes
+
+    - name: "📋 Credenciales ArgoCD"
+      debug:
+        msg:
+          - "🔐 CREDENCIALES ARGOCD:"
+          - "🌐 URL: https://localhost:30443"
+          - "👤 Usuario: admin"
+          - "🔑 Password: {{ argocd_password.stdout | default('Ver comandos para obtener password') }}"
+
+    # 📊 FASE 2: GRAFANA INSTALLATION
+    - name: "📊 FASE 2: Grafana Dashboard"
+      debug:
+        msg: "Instalando Grafana para visualización de métricas"
+      when: grafana_enabled
+
+    - name: "🎨 Deployar Grafana"
+      shell: |
+        cat <<EOF | kubectl apply -f -
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata:
+          name: grafana
+          namespace: {{ grafana_namespace }}
+          labels:
+            app: grafana
+        spec:
+          replicas: 1
+          selector:
+            matchLabels:
+              app: grafana
+          template:
+            metadata:
+              labels:
+                app: grafana
+            spec:
+              containers:
+              - name: grafana
+                image: grafana/grafana:latest
+                ports:
+                - containerPort: 3000
+                env:
+                - name: GF_SECURITY_ADMIN_PASSWORD
+                  value: "admin123"
+                - name: GF_USERS_ALLOW_SIGN_UP
+                  value: "false"
+                - name: GF_SERVER_ROOT_URL
+                  value: "http://localhost:30030"
+                volumeMounts:
+                - name: grafana-storage
+                  mountPath: /var/lib/grafana
+                - name: grafana-config
+                  mountPath: /etc/grafana/provisioning/datasources
+                resources:
+                  requests:
+                    memory: "256Mi"
+                    cpu: "100m"
+                  limits:
+                    memory: "512Mi"
+                    cpu: "200m"
+              volumes:
+              - name: grafana-storage
+                emptyDir: {}
+              - name: grafana-config
+                configMap:
+                  name: grafana-datasources
+        ---
+        apiVersion: v1
+        kind: ConfigMap
+        metadata:
+          name: grafana-datasources
+          namespace: {{ grafana_namespace }}
+        data:
+          prometheus.yml: |
+            apiVersion: 1
+            datasources:
+            - name: Prometheus
+              type: prometheus
+              access: proxy
+              url: http://prometheus-service:9090
+              isDefault: true
+        ---
+        apiVersion: v1
+        kind: Service
+        metadata:
+          name: grafana-service
+          namespace: {{ grafana_namespace }}
+          labels:
+            app: grafana
+        spec:
+          selector:
+            app: grafana
+          ports:
+          - name: http
+            port: 3000
+            targetPort: 3000
+            nodePort: 30030
+          type: NodePort
+        EOF
+      when: grafana_enabled
+
+    - name: "📈 Crear Dashboard para la aplicación"
+      shell: |
+        cat <<EOF | kubectl apply -f -
+        apiVersion: v1
+        kind: ConfigMap
+        metadata:
+          name: app-dashboard
+          namespace: {{ grafana_namespace }}
+          labels:
+            grafana_dashboard: "1"
+        data:
+          dashboard.json: |
+            {
+              "dashboard": {
+                "id": null,
+                "title": "🚀 DevOps Pipeline Dashboard",
+                "tags": ["devops", "pipeline", "monitoring"],
+                "timezone": "browser",
+                "panels": [
+                  {
+                    "id": 1,
+                    "title": "HTTP Requests Total",
+                    "type": "stat",
+                    "targets": [
+                      {
+                        "expr": "sum(rate(http_requests_total[5m]))",
+                        "legendFormat": "RPS"
+                      }
+                    ],
+                    "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0}
+                  },
+                  {
+                    "id": 2,
+                    "title": "Request Latency",
+                    "type": "graph",
+                    "targets": [
+                      {
+                        "expr": "histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket[5m])) by (le))",
+                        "legendFormat": "95th percentile"
+                      }
+                    ],
+                    "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0}
+                  },
+                  {
+                    "id": 3,
+                    "title": "Pod Status",
+                    "type": "table",
+                    "targets": [
+                      {
+                        "expr": "kube_pod_status_phase{namespace=\"{{ app_namespace }}\"}",
+                        "legendFormat": "{{pod}} - {{phase}}"
+                      }
+                    ],
+                    "gridPos": {"h": 8, "w": 24, "x": 0, "y": 8}
+                  }
+                ],
+                "time": {
+                  "from": "now-1h",
+                  "to": "now"
+                },
+                "refresh": "5s"
+              }
+            }
+        EOF
+      when: grafana_enabled
+
+    # 🔄 FASE 3: GITOPS WORKFLOW
+    - name: "🔄 FASE 3: GitOps Application Setup"
+      debug:
+        msg: "Configurando aplicaciones GitOps"
+
+    - name: "📝 Crear manifiestos de la aplicación para GitOps"
+      copy:
+        dest: "/tmp/app-manifests.yaml"
+        content: |
+          apiVersion: argoproj.io/v1alpha1
+          kind: Application
+          metadata:
+            name: {{ app_name }}-gitops
+            namespace: {{ argocd_namespace }}
+            finalizers:
+              - resources-finalizer.argocd.argoproj.io
+          spec:
+            project: default
+            source:
+              repoURL: {{ git_repo }}
+              targetRevision: {{ git_branch }}
+              path: manifests/{{ environment }}
+            destination:
+              server: https://kubernetes.default.svc
+              namespace: {{ app_namespace }}
+            syncPolicy:
+              automated:
+                prune: true
+                selfHeal: true
+              syncOptions:
+              - CreateNamespace=true
+              retry:
+                limit: 5
+                backoff:
+                  duration: 5s
+                  factor: 2
+                  maxDuration: 3m
+
+    - name: "🎯 Crear Application Project"
+      shell: |
+        cat <<EOF | kubectl apply -f -
+        apiVersion: argoproj.io/v1alpha1
+        kind: AppProject
+        metadata:
+          name: devops-pipeline
+          namespace: {{ argocd_namespace }}
+        spec:
+          description: "DevOps Pipeline Applications"
+          sourceRepos:
+          - '*'
+          destinations:
+          - namespace: {{ app_namespace }}
+            server: https://kubernetes.default.svc
+          - namespace: {{ grafana_namespace }}
+            server: https://kubernetes.default.svc
+          clusterResourceWhitelist:
+          - group: ''
+            kind: Namespace
+          namespaceResourceWhitelist:
+          - group: '*'
+            kind: '*'
+          roles:
+          - name: developer
+            description: Developer access
+            policies:
+            - p, proj:devops-pipeline:developer, applications, sync, devops-pipeline/*, allow
+            - p, proj:devops-pipeline:developer, applications, get, devops-pipeline/*, allow
+        EOF
+
+    # 🎮 FASE 4: DEMO AUTOMATION
+    - name: "🎮 FASE 4: Demo Automation"
+      debug:
+        msg: "Creando scripts de automatización para demos"
+
+    - name: "🤖 Crear script de CI/CD simulado"
+      copy:
+        dest: "/tmp/ci-cd-simulator.py"
+        content: |
+          #!/usr/bin/env python3
+          """
+          🤖 Simulador de CI/CD Pipeline
+          Simula un pipeline completo con diferentes etapas
+          """
+          import time
+          import random
+          import requests
+          import json
+          from datetime import datetime
+
+          class CICDSimulator:
+              def __init__(self):
+                  self.app_url = "http://localhost:30081"
+                  self.canary_url = "http://localhost:30082"
+                  self.prometheus_url = "http://localhost:30090"
+                  
+              def log(self, message, level="INFO"):
+                  timestamp = datetime.now().strftime("%H:%M:%S")
+                  print(f"[{timestamp}] {level}: {message}")
+                  
+              def simulate_commit(self):
+                  self.log("📝 Nuevo commit detectado en main branch")
+                  commit_id = f"abc{random.randint(1000, 9999)}"
+                  self.log(f"🔧 Commit ID: {commit_id}")
+                  return commit_id
+                  
+              def run_tests(self):
+                  self.log("🧪 Ejecutando tests automatizados...")
+                  time.sleep(2)
+                  
+                  # Simular tests
+                  tests = ["unit", "integration", "security", "performance"]
+                  for test in tests:
+                      time.sleep(1)
+                      success = random.random() > 0.1  # 90% success rate
+                      status = "✅ PASS" if success else "❌ FAIL"
+                      self.log(f"  {test.upper()} tests: {status}")
+                      if not success:
+                          return False
+                  return True
+                  
+              def build_image(self, commit_id):
+                  self.log("🐳 Building Docker image...")
+                  time.sleep(3)
+                  image_tag = f"v1.0.{random.randint(100, 999)}-{commit_id[:7]}"
+                  self.log(f"📦 Image built: flask-app:{image_tag}")
+                  return image_tag
+                  
+              def security_scan(self, image_tag):
+                  self.log("🛡️ Scanning for vulnerabilities...")
+                  time.sleep(2)
+                  vulnerabilities = random.randint(0, 3)
+                  if vulnerabilities == 0:
+                      self.log("✅ No vulnerabilities found")
+                      return True
+                  else:
+                      self.log(f"⚠️ Found {vulnerabilities} low-severity vulnerabilities")
+                      return True  # Still proceed for demo
+                      
+              def deploy_canary(self, image_tag):
+                  self.log("🟢 Deploying to canary environment...")
+                  time.sleep(2)
+                  self.log(f"🎯 Canary deployment successful: {image_tag}")
+                  
+              def monitor_canary(self):
+                  self.log("📊 Monitoring canary metrics...")
+                  for i in range(5):
+                      time.sleep(1)
+                      try:
+                          response = requests.get(f"{self.canary_url}/health", timeout=5)
+                          if response.status_code == 200:
+                              self.log(f"  Health check {i+1}/5: ✅ OK")
+                          else:
+                              self.log(f"  Health check {i+1}/5: ❌ FAIL")
+                      except:
+                          self.log(f"  Health check {i+1}/5: 🔄 RETRY")
+                          
+                  # Simulate metrics evaluation
+                  error_rate = random.uniform(0, 2)
+                  latency = random.uniform(50, 150)
+                  
+                  self.log(f"📈 Error rate: {error_rate:.2f}%")
+                  self.log(f"📈 Avg latency: {latency:.0f}ms")
+                  
+                  return error_rate < 1.5 and latency < 200
+                  
+              def promote_or_rollback(self, promote=True):
+                  if promote:
+                      self.log("🎉 Promoting canary to production!")
+                      self.log("🔄 Updating traffic routing...")
+                      self.log("📈 Scaling production deployment...")
+                  else:
+                      self.log("🔄 Rolling back canary deployment...")
+                      self.log("⚠️ Restoring stable version...")
+                      
+              def send_notification(self, success=True):
+                  status = "SUCCESS" if success else "FAILED"
+                  self.log(f"📬 Sending notification: Pipeline {status}")
+                  
+              def run_pipeline(self):
+                  self.log("🚀 Starting CI/CD Pipeline")
+                  self.log("=" * 60)
+                  
+                  try:
+                      # CI Phase
+                      commit_id = self.simulate_commit()
+                      
+                      if not self.run_tests():
+                          self.log("❌ Tests failed - stopping pipeline")
+                          self.send_notification(False)
+                          return
+                          
+                      image_tag = self.build_image(commit_id)
+                      
+                      if not self.security_scan(image_tag):
+                          self.log("🛡️ Security scan failed - stopping pipeline")
+                          self.send_notification(False)
+                          return
+                          
+                      # CD Phase
+                      self.deploy_canary(image_tag)
+                      
+                      if self.monitor_canary():
+                          self.promote_or_rollback(True)
+                          self.send_notification(True)
+                          self.log("🎉 Pipeline completed successfully!")
+                      else:
+                          self.promote_or_rollback(False)
+                          self.send_notification(False)
+                          self.log("⚠️ Pipeline completed with rollback")
+                          
+                  except Exception as e:
+                      self.log(f"💥 Pipeline failed with error: {e}")
+                      self.send_notification(False)
+
+          if __name__ == "__main__":
+              simulator = CICDSimulator()
+              
+              print("🎮 CI/CD Pipeline Simulator")
+              print("=" * 40)
+              print("1. Run single pipeline")
+              print("2. Run continuous simulation")
+              print()
+              
+              choice = input("Select option (1-2): ").strip()
+              
+              if choice == "1":
+                  simulator.run_pipeline()
+              elif choice == "2":
+                  print("🔄 Starting continuous simulation (Ctrl+C to stop)")
+                  try:
+                      while True:
+                          simulator.run_pipeline()
+                          print("\n⏰ Waiting 30 seconds for next pipeline...")
+                          time.sleep(30)
+                          print("\n" + "="*60)
+                  except KeyboardInterrupt:
+                      print("\n🛑 Simulation stopped")
+              else:
+                  print("❌ Invalid option")
+
+    - name: "🎭 Crear Load Testing Script"
+      copy:
+        dest: "/tmp/load-tester.py"
+        content: |
+          #!/usr/bin/env python3
+          """
+          🎯 Load Testing Script para DevOps Pipeline
+          """
+          import requests
+          import time
+          import threading
+          import statistics
+          from concurrent.futures import ThreadPoolExecutor
+          import json
+
+          class LoadTester:
+              def __init__(self):
+                  self.blue_url = "http://localhost:30081"
+                  self.green_url = "http://localhost:30082"
+                  self.results = []
+                  
+              def single_request(self, url, endpoint="/"):
+                  start_time = time.time()
+                  try:
+                      response = requests.get(f"{url}{endpoint}", timeout=5)
+                      end_time = time.time()
+                      return {
+                          'status_code': response.status_code,
+                          'response_time': (end_time - start_time) * 1000,
+                          'success': response.status_code == 200
+                      }
+                  except Exception as e:
+                      end_time = time.time()
+                      return {
+                          'status_code': 0,
+                          'response_time': (end_time - start_time) * 1000,
+                          'success': False,
+                          'error': str(e)
+                      }
+                      
+              def load_test(self, url, num_requests=100, concurrency=10):
+                  print(f"🎯 Load testing {url}")
+                  print(f"📊 Requests: {num_requests}, Concurrency: {concurrency}")
+                  
+                  results = []
+                  
+                  with ThreadPoolExecutor(max_workers=concurrency) as executor:
+                      futures = [executor.submit(self.single_request, url) for _ in range(num_requests)]
+                      for i, future in enumerate(futures):
+                          result = future.result()
+                          results.append(result)
+                          if (i + 1) % 10 == 0:
+                              print(f"  Progress: {i + 1}/{num_requests}")
+                              
+                  return self.analyze_results(results)
+                  
+              def analyze_results(self, results):
+                  successful = [r for r in results if r['success']]
+                  response_times = [r['response_time'] for r in successful]
+                  
+                  if not response_times:
+                      return {
+                          'total_requests': len(results),
+                          'successful_requests': 0,
+                          'failed_requests': len(results),
+                          'success_rate': 0,
+                          'avg_response_time': 0,
+                          'min_response_time': 0,
+                          'max_response_time': 0,
+                          'p95_response_time': 0
+                      }
+                  
+                  return {
+                      'total_requests': len(results),
+                      'successful_requests': len(successful),
+                      'failed_requests': len(results) - len(successful),
+                      'success_rate': (len(successful) / len(results)) * 100,
+                      'avg_response_time': statistics.mean(response_times),
+                      'min_response_time': min(response_times),
+                      'max_response_time': max(response_times),
+                      'p95_response_time': statistics.quantiles(response_times, n=20)[18] if len(response_times) > 1 else response_times[0]
+                  }
+                  
+              def print_results(self, results, version):
+                  print(f"\n📊 Results for {version} version:")
+                  print("=" * 50)
+                  print(f"Total Requests:     {results['total_requests']}")
+                  print(f"Successful:         {results['successful_requests']}")
+                  print(f"Failed:             {results['failed_requests']}")
+                  print(f"Success Rate:       {results['success_rate']:.1f}%")
+                  print(f"Avg Response Time:  {results['avg_response_time']:.1f}ms")
+                  print(f"Min Response Time:  {results['min_response_time']:.1f}ms")
+                  print(f"Max Response Time:  {results['max_response_time']:.1f}ms")
+                  print(f"P95 Response Time:  {results['p95_response_time']:.1f}ms")
+                  
+              def compare_versions(self):
+                  print("🔄 Comparing Blue vs Green versions")
+                  print("=" * 60)
+                  
+                  # Test Blue version
+                  blue_results = self.load_test(self.blue_url, 50, 5)
+                  self.print_results(blue_results, "BLUE")
+                  
+                  time.sleep(2)
+                  
+                  # Test Green version
+                  green_results = self.load_test(self.green_url, 50, 5)
+                  self.print_results(green_results, "GREEN")
+                  
+                  # Comparison
+                  print("\n🏆 COMPARISON:")
+                  print("=" * 50)
+                  
+                  if blue_results['success_rate'] > green_results['success_rate']:
+                      print("🔵 BLUE has higher success rate")
+                  elif green_results['success_rate'] > blue_results['success_rate']:
+                      print("🟢 GREEN has higher success rate")
+                  else:
+                      print("🤝 Both versions have equal success rate")
+                      
+                  if blue_results['avg_response_time'] < green_results['avg_response_time']:
+                      print("🔵 BLUE has better response time")
+                  elif green_results['avg_response_time'] < blue_results['avg_response_time']:
+                      print("🟢 GREEN has better response time")
+                  else:
+                      print("🤝 Both versions have similar response time")
+
+          if __name__ == "__main__":
+              tester = LoadTester()
+              
+              print("🎯 Load Testing Tool")
+              print("=" * 30)
+              print("1. Test Blue version")
+              print("2. Test Green version")  
+              print("3. Compare versions")
+              print("4. Stress test")
+              print()
+              
+              choice = input("Select option (1-4): ").strip()
+              
+              if choice == "1":
+                  results = tester.load_test(tester.blue_url)
+                  tester.print_results(results, "BLUE")
+              elif choice == "2":
+                  results = tester.load_test(tester.green_url)
+                  tester.print_results(results, "GREEN")
+              elif choice == "3":
+                  tester.compare_versions()
+              elif choice == "4":
+                  print("🔥 Starting stress test...")
+                  results = tester.load_test(tester.blue_url, 500, 50)
+                  tester.print_results(results, "STRESS TEST")
+              else:
+                  print("❌ Invalid option")
+
+    # 🎉 FASE 5: REPORTE FINAL
+    - name: "🎉 FASE 5: Reporte Final GitOps"
+      debug:
+        msg:
+          - "╔══════════════════════════════════════════════════════════════╗"
+          - "║                🎉 GITOPS SETUP COMPLETADO 🎉                ║"
+          - "╠══════════════════════════════════════════════════════════════╣"
+          - "║  🔗 ACCESOS PRINCIPALES:                                     ║"
+          - "║                                                              ║"
+          - "║  🔄 ArgoCD UI:      https://localhost:30443                 ║"
+          - "║  📊 Grafana:        http://localhost:30030                  ║"
+          - "║  🔵 App Blue:       http://localhost:30081                  ║"
+          - "║  🟢 App Green:      http://localhost:30082                  ║"
+          - "║  📈 Prometheus:     http://localhost:30090                  ║"
+          - "║                                                              ║"
+          - "║  🔐 CREDENCIALES:                                            ║"
+          - "║  ArgoCD - User: admin / Pass: (ver comando)                 ║"
+          - "║  Grafana - User: admin / Pass: admin123                     ║"
+          - "║                                                              ║"
+          - "║  🎮 HERRAMIENTAS DE DEMO:                                    ║"
+          - "║  python3 /tmp/ci-cd-simulator.py                            ║"
+          - "║  python3 /tmp/load-tester.py                                ║"
+          - "╚══════════════════════════════════════════════════════════════╝"
+
+    - name: "🚀 Comandos útiles para GitOps"
+      debug:
+        msg:
+          - "🔧 COMANDOS GITOPS:"
+          - ""
+          - "# Obtener password de ArgoCD:"
+          - "kubectl -n {{ argocd_namespace }} get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 -d"
+          - ""
+          - "# Ver aplicaciones ArgoCD:"
+          - "kubectl get applications -n {{ argocd_namespace }}"
+          - ""
+          - "# Sincronizar aplicación:"
+          - "kubectl patch application {{ app_name }}-gitops -n {{ argocd_namespace }} --type merge -p '{\"operation\":{\"initiatedBy\":{\"username\":\"admin\"},\"sync\":{\"revision\":\"HEAD\"}}}'"
+          - ""
+          - "# Ver logs de ArgoCD:"
+          - "kubectl logs -f deployment/argocd-server -n {{ argocd_namespace }}"
+          - ""
+          - "# Ejecutar simulador CI/CD:"
+          - "python3 /tmp/ci-cd-simulator.py"
+          - ""
+          - "# Hacer load testing:"
+          - "python3 /tmp/load-tester.py" 
